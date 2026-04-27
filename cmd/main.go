@@ -117,7 +117,7 @@ func transactionToVector(transaction internal.Transaction, normalizationConstant
 		if err != nil {
 			return nil, fmt.Errorf("error parsing lastTransaction.timestamp [%s] err %s", transaction.LastTransaction.Timestamp, err.Error())
 		}
-		minutesSinceLastTx = clampFloat32(float32(requestedAt.Sub(lastTransactionTime).Minutes() / float64(normalizationConstants.MaxMinutes)))
+		minutesSinceLastTx = clampFloat32(float32(requestedAt.Sub(lastTransactionTime).Minutes()) / normalizationConstants.MaxMinutes)
 	} else {
 		minutesSinceLastTx = -1
 	}
