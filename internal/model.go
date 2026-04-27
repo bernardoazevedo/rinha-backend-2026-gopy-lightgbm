@@ -32,13 +32,13 @@ type Transaction struct {
 
 type TransactionData struct {
 	Amount       float32 `json:"amount"`
-	Installments int     `json:"installments"`
+	Installments float32 `json:"installments"`
 	RequestedAt  string  `json:"requested_at"`
 }
 
 type CustomerData struct {
 	AvgAmount      float32  `json:"avg_amount"`
-	TxCount24h     int      `json:"tx_count_24h"`
+	TxCount24h     float32  `json:"tx_count_24h"`
 	KnownMerchants []string `json:"known_merchants"`
 }
 
@@ -66,10 +66,10 @@ type Response struct {
 
 type NormalizationConstants struct {
 	MaxAmount            float32 `json:"max_amount"`
-	MaxInstallments      int     `json:"max_installments"`
+	MaxInstallments      float32 `json:"max_installments"`
 	AmountVsAvgRatio     float32 `json:"amount_vs_avg_ratio"`
 	MaxMinutes           int     `json:"max_minutes"`
 	MaxKm                float32 `json:"max_km"`
-	MaxTxCount24h        int     `json:"max_tx_count_24h"`
+	MaxTxCount24h        float32 `json:"max_tx_count_24h"`
 	MaxMerchantAvgAmount float32 `json:"max_merchant_avg_amount"`
 }

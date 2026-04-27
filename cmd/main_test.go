@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/bernardoazevedo/rinha-de-backend-2026/internal"
@@ -18,35 +19,67 @@ func TestTransactionToVector(t *testing.T) {
 		t.Fatalf("error loading mccRiskMap err %v", err)
 	}
 
-	transactionJson := `{
-      "id": "tx-1329056812",
-		"transaction": {"amount": 41.12, "installments": 2, "requested_at": "2026-03-11T18:45:53Z"},
-		"customer": {"avg_amount": 82.24, "tx_count_24h": 3, "known_merchants": ["MERC-003", "MERC-016"]},
-		"merchant": {"id": "MERC-016", "mcc": "5411", "avg_amount": 60.25},
-		"terminal": {"is_online": false, "card_present": true, "km_from_home": 29.23},
-		"last_transaction": null
-	}`
-	var transaction internal.Transaction
-	err = json.Unmarshal([]byte(transactionJson), &transaction)
-	if err != nil {
-		t.Fatalf("error unmarshalling transactionJson err %v", err)
+	transactionsJson := []string{
+		`{
+			"id": "tx-1329056812",
+			"transaction": {"amount": 41.12, "installments": 2, "requested_at": "2026-03-11T18:45:53Z"},
+			"customer": {"avg_amount": 82.24, "tx_count_24h": 3, "known_merchants": ["MERC-003", "MERC-016"]},
+			"merchant": {"id": "MERC-016", "mcc": "5411", "avg_amount": 60.25},
+			"terminal": {"is_online": false, "card_present": true, "km_from_home": 29.23},
+			"last_transaction": null
+		}`,
+		`{
+			"id": "tx-3330991687",
+			"transaction":      { "amount": 9505.97, "installments": 10, "requested_at": "2026-03-14T05:15:12Z" },
+			"customer":         { "avg_amount": 81.28, "tx_count_24h": 20, "known_merchants": ["MERC-008", "MERC-007", "MERC-005"] },
+			"merchant":         { "id": "MERC-068", "mcc": "7802", "avg_amount": 54.86 },
+			"terminal":         { "is_online": false, "card_present": true, "km_from_home": 952.27 },
+			"last_transaction": null
+		}`,
+	}
+	var transactions []internal.Transaction
+	for _, transactionJson := range transactionsJson {
+		var transaction internal.Transaction
+		err = json.Unmarshal([]byte(transactionJson), &transaction)
+		if err != nil {
+			t.Fatalf("error unmarshalling transactionJson err %v", err)
+		}
+		transactions = append(transactions, transaction)
 	}
 
-	expected := []float32{
-		0.0041, // 0  - amount
-		0.1667, // 1  - installments
-		0.05,   // 2  - amount_vs_avg
-		0.7826, // 3  - hour_of_day
-		0.3333, // 4  - day_of_week
-		-1,     // 5  - minutes_since_last_tx
-		-1,     // 6  - km_from_last_tx
-		0.0292, // 7  - km_from_home
-		0.15,   // 8  - tx_count_24h
-		0,      // 9  - is_online
-		1,      // 10 - card_present
-		0,      // 11 - unknown_merchant
-		0.15,   // 12 - mcc_risk
-		0.006,  // 13 - merchant_avg_amount
+	expected := map[int][]float32{
+		0: {
+			0.0041, // 0  - amount
+			0.1667, // 1  - installments
+			0.05,   // 2  - amount_vs_avg
+			0.7826, // 3  - hour_of_day
+			0.3333, // 4  - day_of_week
+			-1,     // 5  - minutes_since_last_tx
+			-1,     // 6  - km_from_last_tx
+			0.0292, // 7  - km_from_home
+			0.15,  // 8  - tx_count_24h
+			0,     // 9  - is_online
+			1,     // 10 - card_present
+			0,     // 11 - unknown_merchant
+			0.15,  // 12 - mcc_risk
+			0.006, // 13 - merchant_avg_amount
+		},
+		1: {
+			0.9506, // 0  - amount
+			0.8333, // 1  - installments
+			1.0,    // 2  - amount_vs_avg
+			0.2174, // 3  - hour_of_day
+			0.8333, // 4  - day_of_week
+			-1,     // 5  - minutes_since_last_tx
+			-1,     // 6  - km_from_last_tx
+			0.9523, // 7  - km_from_home
+			1.0,    // 8  - tx_count_24h
+			0,      // 9  - is_online
+			1,      // 10 - card_present
+			1,      // 11 - unknown_merchant
+			0.75,   // 12 - mcc_risk
+			0.0055, // 13 - merchant_avg_amount
+		},
 	}
 	expectedKeys := []string{
 		"amount",                // 0  - amount
@@ -65,31 +98,21 @@ func TestTransactionToVector(t *testing.T) {
 		"merchant_avg_amount",   // 13 - merchant_avg_amount
 	}
 
-	vector, err := transactionToVector(transaction, normalizationConstants, mccRiskMap)
-	if err != nil {
-		t.Fatalf("transactionToVector returned error: %v", err)
-	}
+	const epsilon = 1e-4
+	for txIndex, eachTx := range transactions {
+		vector, err := transactionToVector(eachTx, normalizationConstants, mccRiskMap)
+		if err != nil {
+			t.Fatalf("transactionToVector returned error: %v", err)
+		}
 
-	if len(vector) != len(expected) {
-		t.Fatalf("vector size: got %d, expected %d", len(vector), len(expected))
-	}
+		if len(vector) != len(expected[txIndex]) {
+			t.Fatalf("transaction %d vector size: got %d, expected %d", txIndex, len(vector), len(expected[txIndex]))
+		}
 
-	// const epsilon = 1e-4
-	// for i := range expected {
-	// 	if math.Abs(float64(vector[i]-expected[i])) > epsilon {
-	// 		// t.Errorf("index %d: got %s, expected %s",
-	// 		// 	i,
-	// 		// 	fmt.Sprintf("%.6f", vector[i]),
-	// 		// 	fmt.Sprintf("%.6f", expected[i]),
-	// 		// )
-	// 		if vector[i] != expected[i] {
-	// 			t.Errorf("(%d) %s: got %f, expected %f", i, expectedKeys[i], vector[i], expected[i])
-	// 		}
-	// 	}
-	// }
-	for index := range expectedKeys {
-		if vector[index] != expected[index] {
-			t.Errorf("(%d) %s: got %f, expected %f", index, expectedKeys[index], vector[index], expected[index])
+		for keysIndex := range expectedKeys {
+			if math.Abs(float64(vector[keysIndex]-expected[txIndex][keysIndex])) > epsilon {
+				t.Errorf("transaction %d (%d) %s: got %f, expected %f", txIndex, keysIndex, expectedKeys[keysIndex], vector[keysIndex], expected[txIndex][keysIndex])
+			}
 		}
 	}
 }

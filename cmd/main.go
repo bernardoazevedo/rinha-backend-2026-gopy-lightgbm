@@ -146,18 +146,19 @@ func transactionToVector(transaction internal.Transaction, normalizationConstant
 		clampFloat32(float32(transaction.Transaction.Amount / normalizationConstants.MaxAmount)),                                           // 0  - `amount`
 		clampFloat32(float32(transaction.Transaction.Installments / normalizationConstants.MaxInstallments)),                               // 1  - `installments`
 		clampFloat32(float32((transaction.Transaction.Amount / transaction.Customer.AvgAmount) / normalizationConstants.AmountVsAvgRatio)), // 2  - `amount_vs_avg`
-		float32(requestedAt.UTC().Hour() / 23), // 3  - `hour_of_day`
-		float32(requestedAt.UTC().Day() / 6),   // 4  - `day_of_week`
-		float32(minutesSinceLastTx),            // 5  - `minutes_since_last_tx`
-		float32(kmFromLastTx),                  // 6  - `km_from_last_tx`
-		clampFloat32(float32(transaction.Terminal.KmFromHome / normalizationConstants.MaxKm)),               // 7  - `km_from_home`
-		clampFloat32(float32(transaction.Customer.TxCount24h / normalizationConstants.MaxTxCount24h)),       // 8  - `tx_count_24h`
+		float32(float32(requestedAt.UTC().Hour()) / 23.0),                                                                                  // 3  - `hour_of_day`
+		float32(weekdayToRinhaDay(requestedAt.UTC().Weekday()) / 6.0),                                                                      // 4  - `day_of_week`
+		float32(minutesSinceLastTx), // 5  - `minutes_since_last_tx`
+		float32(kmFromLastTx),       // 6  - `km_from_last_tx`
+		clampFloat32(transaction.Terminal.KmFromHome / normalizationConstants.MaxKm),                        // 7  - `km_from_home`
+		clampFloat32(transaction.Customer.TxCount24h / normalizationConstants.MaxTxCount24h),                // 8  - `tx_count_24h`
 		float32(boolToFloat32(transaction.Terminal.IsOnline)),                                               // 9  - `is_online`
 		float32(boolToFloat32(transaction.Terminal.CardPresent)),                                            // 10 - `card_present`
 		float32(boolToFloat32(unknown_merchant)),                                                            // 11 - `unknown_merchant`
 		float32(mccRisk),                                                                                    // 12 - `mcc_risk`
 		clampFloat32(float32(transaction.Merchant.AvgAmount / normalizationConstants.MaxMerchantAvgAmount)), // 13 - `merchant_avg_amount`
 	}, nil
+
 }
 
 func loadNormalizationConstants(path string) (internal.NormalizationConstants, error) {
@@ -209,4 +210,25 @@ func clampFloat32(value float32) float32 {
 		return MAX
 	}
 	return value
+}
+
+func weekdayToRinhaDay(weekday time.Weekday) float32 {
+	switch weekday {
+	case time.Monday:
+		return 0
+	case time.Tuesday:
+		return 1
+	case time.Wednesday:
+		return 2
+	case time.Thursday:
+		return 3
+	case time.Friday:
+		return 4
+	case time.Saturday:
+		return 5
+	case time.Sunday:
+		return 6
+	default:
+		return 0
+	}
 }
