@@ -11,41 +11,7 @@ import (
 )
 
 func main() {
-	index, err := comet.NewFlatIndex(14, comet.Euclidean)
-	if err != nil {
-		panic(err)
-	}
-
-	normalizationConstants, err := loadNormalizationConstants("./resources/normalization.json")
-	if err != nil {
-		panic(err)
-	}
-
-	mccRiskMap, err := loadMccRiskMap("./resources/mcc_risk.json")
-	if err != nil {
-		panic(err)
-	}
-
-	exampleTransactions, err := loadExampleTransactions("./resources/example-payloads.json")
-	if err != nil {
-		panic(err)
-	}
-
-	for _, transaction := range exampleTransactions {
-
-		vector, err := transactionToVector(transaction, normalizationConstants, mccRiskMap)
-		if err != nil {
-			panic(err)
-		}
-
-		node := comet.NewVectorNode(vector)
-		err = index.Add(*node)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	searchVector := []float32{
+	vector := []float32{
 		0.0041, // 0  - amount
 		0.1667, // 1  - installments
 		0.05,   // 2  - amount_vs_avg
@@ -61,19 +27,68 @@ func main() {
 		0.15,   // 12 - mcc_risk
 		0.006,  // 13 - merchant_avg_amount
 	}
+	label := loadDatasetAndVerifyVector("./resources/references.json", vector)
+	fmt.Println(label)
+}
 
-	results, err := index.NewSearch().WithQuery(searchVector).WithK(3).Execute()
+func loadDatasetAndVerifyVector(datasetPath string, vector []float32) string {
+	index, err := comet.NewFlatIndex(14, comet.Euclidean)
 	if err != nil {
 		panic(err)
 	}
 
-	for _, result := range results {
-		println()
-		println("id: ", result.GetId())
-		println("score: ", result.GetScore())
-		// println("vector: ", result.Node.Vector())
+	referenceVectors, err := loadReferenceVectors(datasetPath)
+	if err != nil {
+		panic(err)
 	}
 
+	labelMap := make(map[uint32]string, len(referenceVectors))
+
+	for _, ref := range referenceVectors {
+		node := comet.NewVectorNode(ref.Vector)
+		labelMap[node.ID()] = ref.Label
+		err = index.Add(*node)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	results, err := index.NewSearch().WithQuery(vector).WithK(3).Execute()
+	if err != nil {
+		panic(err)
+	}
+
+	var fraudCount int
+	for _, result := range results {
+		if labelMap[result.GetId()] == "fraud" {
+			fraudCount++
+		}
+	}
+
+	const threshold = 0.6
+
+	fraudScore := float32(fraudCount) / float32(len(results))
+	if fraudScore >= threshold {
+		return "fraud"
+	}
+
+	return "legit"
+}
+
+func loadReferenceVectors(path string) ([]internal.TransactionVector, error) {
+	var vectors []internal.TransactionVector
+
+	inputData, err := os.ReadFile(path)
+	if err != nil {
+		return vectors, fmt.Errorf("error reading reference vectors: %s", err.Error())
+	}
+
+	err = json.Unmarshal(inputData, &vectors)
+	if err != nil {
+		return vectors, fmt.Errorf("error unmarshalling reference vectors: %s", err.Error())
+	}
+
+	return vectors, nil
 }
 
 func transactionToVector(transaction internal.Transaction, normalizationConstants internal.NormalizationConstants, mccRiskMap map[string]float32) ([]float32, error) {

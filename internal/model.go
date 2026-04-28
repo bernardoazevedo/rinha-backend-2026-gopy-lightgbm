@@ -73,3 +73,8 @@ type NormalizationConstants struct {
 	MaxTxCount24h        float32 `json:"max_tx_count_24h"`
 	MaxMerchantAvgAmount float32 `json:"max_merchant_avg_amount"`
 }
+
+type TransactionVector struct {
+	Vector []float32 `json:"vector"`
+	Label  string    `json:"label"`
+}

@@ -116,3 +116,47 @@ func TestTransactionToVector(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadDatasetAndVerifyVector(t *testing.T) {
+	vectors := map[string][]float32{
+		"legit": {
+			0.0041, // 0  - amount
+			0.1667, // 1  - installments
+			0.05,   // 2  - amount_vs_avg
+			0.7826, // 3  - hour_of_day
+			0.3333, // 4  - day_of_week
+			-1,     // 5  - minutes_since_last_tx
+			-1,     // 6  - km_from_last_tx
+			0.0292, // 7  - km_from_home
+			0.15,   // 8  - tx_count_24h
+			0,      // 9  - is_online
+			1,      // 10 - card_present
+			0,      // 11 - unknown_merchant
+			0.15,   // 12 - mcc_risk
+			0.006,  // 13 - merchant_avg_amount
+		},
+		"fraud": {
+			0.9506, // 0  - amount
+			0.8333, // 1  - installments
+			1.0,    // 2  - amount_vs_avg
+			0.2174, // 3  - hour_of_day
+			0.8333, // 4  - day_of_week
+			-1,     // 5  - minutes_since_last_tx
+			-1,     // 6  - km_from_last_tx
+			0.9523, // 7  - km_from_home
+			1.0,    // 8  - tx_count_24h
+			0,      // 9  - is_online
+			1,      // 10 - card_present
+			1,      // 11 - unknown_merchant
+			0.75,   // 12 - mcc_risk
+			0.0055, // 13 - merchant_avg_amount
+		},
+	}
+
+	for label, vector := range vectors {
+		result := loadDatasetAndVerifyVector("../resources/references.json", vector)
+		if result != label {
+			t.Errorf("vector %s: got label %s, expected %s", label, result, label)
+		}
+	}
+}
