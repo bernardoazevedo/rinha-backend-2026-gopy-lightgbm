@@ -7,29 +7,14 @@ import (
 	"time"
 
 	"github.com/bernardoazevedo/rinha-de-backend-2026/internal"
+	"github.com/wizenheimer/comet"
 )
 
 func main() {
-	exampleJson := `{
-		"id": "tx-1329056812",
-		"transaction": {
-			"amount": 41.12,
-			"installments": 2,
-			"requested_at": "2026-03-11T18:45:53Z"
-		},
-		"customer": {
-			"avg_amount": 82.24,
-			"tx_count_24h": 3,
-			"known_merchants": ["MERC-003", "MERC-016"]
-		},
-		"merchant": { "id": "MERC-016", "mcc": "5411", "avg_amount": 60.25 },
-		"terminal": {
-			"is_online": false,
-			"card_present": true,
-			"km_from_home": 29.23
-		},
-		"last_transaction": null
-	}`
+	index, err := comet.NewFlatIndex(14, comet.Euclidean)
+	if err != nil {
+		panic(err)
+	}
 
 	normalizationConstants, err := loadNormalizationConstants("./resources/normalization.json")
 	if err != nil {
@@ -41,69 +26,56 @@ func main() {
 		panic(err)
 	}
 
-	var transaction internal.Transaction
-	err = json.Unmarshal([]byte(exampleJson), &transaction)
+	exampleTransactions, err := loadExampleTransactions("./resources/example-payloads.json")
 	if err != nil {
 		panic(err)
 	}
 
-	vector, err := transactionToVector(transaction, normalizationConstants, mccRiskMap)
+	for _, transaction := range exampleTransactions {
+
+		vector, err := transactionToVector(transaction, normalizationConstants, mccRiskMap)
+		if err != nil {
+			panic(err)
+		}
+
+		node := comet.NewVectorNode(vector)
+		err = index.Add(*node)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	searchVector := []float32{
+		0.0041, // 0  - amount
+		0.1667, // 1  - installments
+		0.05,   // 2  - amount_vs_avg
+		0.7826, // 3  - hour_of_day
+		0.3333, // 4  - day_of_week
+		-1,     // 5  - minutes_since_last_tx
+		-1,     // 6  - km_from_last_tx
+		0.0292, // 7  - km_from_home
+		0.15,   // 8  - tx_count_24h
+		0,      // 9  - is_online
+		1,      // 10 - card_present
+		0,      // 11 - unknown_merchant
+		0.15,   // 12 - mcc_risk
+		0.006,  // 13 - merchant_avg_amount
+	}
+
+	results, err := index.NewSearch().WithQuery(searchVector).WithK(3).Execute()
 	if err != nil {
 		panic(err)
 	}
 
-	vectorJson, err := json.MarshalIndent(vector, "", "  ")
-	if err != nil {
-		panic(err)
+	for _, result := range results {
+		println()
+		println("id: ", result.GetId())
+		println("score: ", result.GetScore())
+		// println("vector: ", result.Node.Vector())
 	}
-	fmt.Println(string(vectorJson))
 
-	// graph := hnsw.NewGraph[string]()
-
-	// var transactions []internal.Transaction
-	// inputData, err := os.ReadFile("resources/example-payloads.json")
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// err = json.Unmarshal(inputData, &transactions)
-	// if err != nil {
-	// 	panic(err)
-	// }
-
-	// for i, transaction := range transactions {
-	// 	// graph.Add(hnsw.MakeNode(transaction.ID, transaction)))
-	// 	// transactionJson, err := json.MarshalIndent(transaction, "", "  ")
-	// 	// if err != nil {
-	// 	// 	println("error parsing back transaction [", i, "] from [", transaction.ID, "] error ", err.Error())
-	// 	// 	continue
-	// 	// }
-	// 	// println(string(transactionJson))
-	// 	println(i+1, transaction.ID)
-	// }
 }
 
-// ### As 14 dimensões do vetor
-//
-// As transações ([exemplos realistas aqui](/resources/example-payloads.json)) precisam ser transformadas em vetores de
-// 14 posições, seguindo a ordem e as regras de normalização abaixo.
-//
-// | índice | dimensão                 | fórmula                                                                          |
-// |-----|--------------------------|----------------------------------------------------------------------------------|
-// | 0   | `amount`                 | `limitar(transaction.amount / max_amount)`                                         |
-// | 1   | `installments`           | `limitar(transaction.installments / max_installments)`                             |
-// | 2   | `amount_vs_avg`          | `limitar((transaction.amount / customer.avg_amount) / amount_vs_avg_ratio)`        |
-// | 3   | `hour_of_day`            | `hora(transaction.requested_at) / 23`  (0-23, UTC)                               |
-// | 4   | `day_of_week`            | `dia_da_semana(transaction.requested_at) / 6`    (seg=0, dom=6)                  |
-// | 5   | `minutes_since_last_tx`  | `limitar(minutos / max_minutes)` ou `-1` se `last_transaction: null`             |
-// | 6   | `km_from_last_tx`        | `limitar(last_transaction.km_from_current / max_km)` ou `-1` se `last_transaction: null` |
-// | 7   | `km_from_home`           | `limitar(terminal.km_from_home / max_km)`                                          |
-// | 8   | `tx_count_24h`           | `limitar(customer.tx_count_24h / max_tx_count_24h)`                                |
-// | 9   | `is_online`              | `1` se `terminal.is_online`, senão `0`                                           |
-// | 10  | `card_present`           | `1` se `terminal.card_present`, senão `0`                                        |
-// | 11  | `unknown_merchant`       | `1` se `merchant.id` não estiver em `customer.known_merchants`, senão `0` (invertido: `1` = desconhecido) |
-// | 12  | `mcc_risk`               | `mcc_risk.json[merchant.mcc]` (valor padrão `0.5`)                               |
-// | 13  | `merchant_avg_amount`    | `limitar(merchant.avg_amount / max_merchant_avg_amount)`                           |
 func transactionToVector(transaction internal.Transaction, normalizationConstants internal.NormalizationConstants, mccRiskMap map[string]float32) ([]float32, error) {
 	requestedAt, err := time.Parse(time.RFC3339Nano, transaction.Transaction.RequestedAt)
 	if err != nil {
@@ -191,6 +163,22 @@ func loadMccRiskMap(path string) (map[string]float32, error) {
 	}
 
 	return mccRiskMap, nil
+}
+
+func loadExampleTransactions(path string) ([]internal.Transaction, error) {
+	var transactions []internal.Transaction
+
+	inputData, err := os.ReadFile(path)
+	if err != nil {
+		return transactions, fmt.Errorf("error reading example transactions: %s", err.Error())
+	}
+
+	err = json.Unmarshal(inputData, &transactions)
+	if err != nil {
+		return transactions, fmt.Errorf("error unmarshalling example transactions: %s", err.Error())
+	}
+
+	return transactions, nil
 }
 
 func boolToFloat32(b bool) float32 {
