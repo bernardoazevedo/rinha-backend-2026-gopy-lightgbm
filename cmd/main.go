@@ -11,28 +11,7 @@ import (
 )
 
 func main() {
-	index, err := comet.NewFlatIndex(14, comet.Euclidean)
-	if err != nil {
-		panic(err)
-	}
-
-	referenceVectors, err := loadReferenceVectors("./resources/references.json")
-	if err != nil {
-		panic(err)
-	}
-
-	labelMap := make(map[uint32]string, len(referenceVectors))
-
-	for _, ref := range referenceVectors {
-		node := comet.NewVectorNode(ref.Vector)
-		labelMap[node.ID()] = ref.Label
-		err = index.Add(*node)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	searchVector := []float32{
+	vector := []float32{
 		0.0041, // 0  - amount
 		0.1667, // 1  - installments
 		0.05,   // 2  - amount_vs_avg
@@ -48,31 +27,52 @@ func main() {
 		0.15,   // 12 - mcc_risk
 		0.006,  // 13 - merchant_avg_amount
 	}
-	// searchVector = []float32{
-	// 	0.9506, // 0  - amount
-	// 	0.8333, // 1  - installments
-	// 	1.0,    // 2  - amount_vs_avg
-	// 	0.2174, // 3  - hour_of_day
-	// 	0.8333, // 4  - day_of_week
-	// 	-1,     // 5  - minutes_since_last_tx
-	// 	-1,     // 6  - km_from_last_tx
-	// 	0.9523, // 7  - km_from_home
-	// 	1.0,    // 8  - tx_count_24h
-	// 	0,      // 9  - is_online
-	// 	1,      // 10 - card_present
-	// 	1,      // 11 - unknown_merchant
-	// 	0.75,   // 12 - mcc_risk
-	// 	0.0055, // 13 - merchant_avg_amount
-	// }
+	label := loadDatasetAndVerifyVector("./resources/references.json", vector)
+	fmt.Println(label)
+}
 
-	results, err := index.NewSearch().WithQuery(searchVector).WithK(3).Execute()
+func loadDatasetAndVerifyVector(datasetPath string, vector []float32) string {
+	index, err := comet.NewFlatIndex(14, comet.Euclidean)
 	if err != nil {
 		panic(err)
 	}
 
-	for _, result := range results {
-		fmt.Printf("id: %d | score: %f | label: %s\n", result.GetId(), result.GetScore(), labelMap[result.GetId()])
+	referenceVectors, err := loadReferenceVectors(datasetPath)
+	if err != nil {
+		panic(err)
 	}
+
+	labelMap := make(map[uint32]string, len(referenceVectors))
+
+	for _, ref := range referenceVectors {
+		node := comet.NewVectorNode(ref.Vector)
+		labelMap[node.ID()] = ref.Label
+		err = index.Add(*node)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	results, err := index.NewSearch().WithQuery(vector).WithK(3).Execute()
+	if err != nil {
+		panic(err)
+	}
+
+	var fraudCount int
+	for _, result := range results {
+		if labelMap[result.GetId()] == "fraud" {
+			fraudCount++
+		}
+	}
+
+	const threshold = 0.6
+
+	fraudScore := float32(fraudCount) / float32(len(results))
+	if fraudScore >= threshold {
+		return "fraud"
+	}
+
+	return "legit"
 }
 
 func loadReferenceVectors(path string) ([]internal.TransactionVector, error) {
