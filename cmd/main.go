@@ -16,29 +16,16 @@ func main() {
 		panic(err)
 	}
 
-	normalizationConstants, err := loadNormalizationConstants("./resources/normalization.json")
+	referenceVectors, err := loadReferenceVectors("./resources/references.json")
 	if err != nil {
 		panic(err)
 	}
 
-	mccRiskMap, err := loadMccRiskMap("./resources/mcc_risk.json")
-	if err != nil {
-		panic(err)
-	}
+	labelMap := make(map[uint32]string, len(referenceVectors))
 
-	exampleTransactions, err := loadExampleTransactions("./resources/example-payloads.json")
-	if err != nil {
-		panic(err)
-	}
-
-	for _, transaction := range exampleTransactions {
-
-		vector, err := transactionToVector(transaction, normalizationConstants, mccRiskMap)
-		if err != nil {
-			panic(err)
-		}
-
-		node := comet.NewVectorNode(vector)
+	for _, ref := range referenceVectors {
+		node := comet.NewVectorNode(ref.Vector)
+		labelMap[node.ID()] = ref.Label
 		err = index.Add(*node)
 		if err != nil {
 			panic(err)
@@ -61,6 +48,22 @@ func main() {
 		0.15,   // 12 - mcc_risk
 		0.006,  // 13 - merchant_avg_amount
 	}
+	// searchVector = []float32{
+	// 	0.9506, // 0  - amount
+	// 	0.8333, // 1  - installments
+	// 	1.0,    // 2  - amount_vs_avg
+	// 	0.2174, // 3  - hour_of_day
+	// 	0.8333, // 4  - day_of_week
+	// 	-1,     // 5  - minutes_since_last_tx
+	// 	-1,     // 6  - km_from_last_tx
+	// 	0.9523, // 7  - km_from_home
+	// 	1.0,    // 8  - tx_count_24h
+	// 	0,      // 9  - is_online
+	// 	1,      // 10 - card_present
+	// 	1,      // 11 - unknown_merchant
+	// 	0.75,   // 12 - mcc_risk
+	// 	0.0055, // 13 - merchant_avg_amount
+	// }
 
 	results, err := index.NewSearch().WithQuery(searchVector).WithK(3).Execute()
 	if err != nil {
@@ -68,12 +71,24 @@ func main() {
 	}
 
 	for _, result := range results {
-		println()
-		println("id: ", result.GetId())
-		println("score: ", result.GetScore())
-		// println("vector: ", result.Node.Vector())
+		fmt.Printf("id: %d | score: %f | label: %s\n", result.GetId(), result.GetScore(), labelMap[result.GetId()])
+	}
+}
+
+func loadReferenceVectors(path string) ([]internal.TransactionVector, error) {
+	var vectors []internal.TransactionVector
+
+	inputData, err := os.ReadFile(path)
+	if err != nil {
+		return vectors, fmt.Errorf("error reading reference vectors: %s", err.Error())
 	}
 
+	err = json.Unmarshal(inputData, &vectors)
+	if err != nil {
+		return vectors, fmt.Errorf("error unmarshalling reference vectors: %s", err.Error())
+	}
+
+	return vectors, nil
 }
 
 func transactionToVector(transaction internal.Transaction, normalizationConstants internal.NormalizationConstants, mccRiskMap map[string]float32) ([]float32, error) {
