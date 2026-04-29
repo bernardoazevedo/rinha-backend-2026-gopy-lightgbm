@@ -78,20 +78,17 @@ func transactionToVector(transaction Transaction, normalizationConstants Normali
 
 	var lastTransactionTime time.Time
 	var minutesSinceLastTx float32
+	var kmFromLastTx float32
 	if transaction.LastTransaction != nil {
 		lastTransactionTime, err = time.Parse(time.RFC3339Nano, transaction.LastTransaction.Timestamp)
 		if err != nil {
 			return nil, fmt.Errorf("error parsing lastTransaction.timestamp [%s] err %s", transaction.LastTransaction.Timestamp, err.Error())
 		}
 		minutesSinceLastTx = clampFloat32(float32(requestedAt.Sub(lastTransactionTime).Minutes()) / normalizationConstants.MaxMinutes)
-	} else {
-		minutesSinceLastTx = -1
-	}
-
-	var kmFromLastTx float32
-	if transaction.LastTransaction != nil {
+		
 		kmFromLastTx = clampFloat32(transaction.LastTransaction.KmFromCurrent / normalizationConstants.MaxKm)
 	} else {
+		minutesSinceLastTx = -1
 		kmFromLastTx = -1
 	}
 
