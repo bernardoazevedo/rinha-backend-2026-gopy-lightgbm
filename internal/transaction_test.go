@@ -7,14 +7,14 @@ import (
 )
 
 func TestTransactionToVector(t *testing.T) {
-	normalizationConstants, err := loadNormalizationConstants("../resources/normalization.json")
+	normalizationConstants, err := LoadNormalizationConstants("../resources/normalization.json")
 	if err != nil {
-		t.Fatalf("error loading normalizationConstants err %v", err)
+		t.Fatalf("error LoadingNormalizationConstants err %v", err)
 	}
 
-	mccRiskMap, err := loadMccRiskMap("../resources/mcc_risk.json")
+	mccRiskMap, err := LoadMccRiskMap("../resources/mcc_risk.json")
 	if err != nil {
-		t.Fatalf("error loading mccRiskMap err %v", err)
+		t.Fatalf("error LoadingMccRiskMap err %v", err)
 	}
 
 	transactionsJson := []string{
@@ -98,9 +98,9 @@ func TestTransactionToVector(t *testing.T) {
 
 	const epsilon = 1e-4
 	for txIndex, eachTx := range transactions {
-		vector, err := transactionToVector(eachTx, normalizationConstants, mccRiskMap)
+		vector, err := TransactionToVector(eachTx, normalizationConstants, mccRiskMap)
 		if err != nil {
-			t.Fatalf("transactionToVector returned error: %v", err)
+			t.Fatalf("TransactionToVector returned error: %v", err)
 		}
 
 		if len(vector) != len(expected[txIndex]) {
@@ -152,7 +152,10 @@ func TestLoadDatasetAndVerifyVector(t *testing.T) {
 	}
 
 	for expectedApproved, vector := range vectors {
-		approved, _ := LoadDatasetAndVerifyVector("../resources/references.json", vector)
+		approved, _, err := LoadDatasetAndVerifyVector("../resources/references.json", vector)
+		if err != nil {
+			t.Fatalf("LoadDatasetAndVerifyVector returned error: %v", err)
+		}
 		if approved != expectedApproved {
 			t.Errorf("vector %v: got label %v, expected %v", vector, approved, expectedApproved)
 		}

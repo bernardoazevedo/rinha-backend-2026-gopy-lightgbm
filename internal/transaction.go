@@ -9,15 +9,15 @@ import (
 	"github.com/wizenheimer/comet"
 )
 
-func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, float32) {
+func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	index, err := comet.NewFlatIndex(14, comet.Euclidean)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("error creating flat index: %s", err.Error())
 	}
 
 	referenceVectors, err := loadReferenceVectors(datasetPath)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("error loading reference vectors: %s", err.Error())
 	}
 
 	labelMap := make(map[uint32]string, len(referenceVectors))
@@ -27,19 +27,23 @@ func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, flo
 		labelMap[node.ID()] = ref.Label
 		err = index.Add(*node)
 		if err != nil {
-			panic(err)
+			return nil, fmt.Errorf("error adding vector to index: %s", err.Error())
 		}
 	}
 
+	return &VectorDatabase{index: index, labelMap: labelMap}, nil
+}
+
+func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
 	kResults := 5
-	results, err := index.NewSearch().WithQuery(vector).WithK(kResults).Execute()
+	results, err := vd.index.NewSearch().WithQuery(vector).WithK(kResults).Execute()
 	if err != nil {
-		panic(err)
+		return false, 0, fmt.Errorf("error searching index: %s", err.Error())
 	}
 
 	var fraudCount int
 	for _, result := range results {
-		if labelMap[result.GetId()] == "fraud" {
+		if vd.labelMap[result.GetId()] == "fraud" {
 			fraudCount++
 		}
 	}
@@ -48,10 +52,24 @@ func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, flo
 
 	fraudScore := float32(fraudCount) / float32(kResults)
 	if fraudScore >= threshold {
-		return false, fraudScore
+		return false, fraudScore, nil
 	}
 
-	return true, fraudScore
+	return true, fraudScore, nil
+}
+
+func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, float32, error) {
+	vectorDatabase, err := LoadDataset(datasetPath)
+	if err != nil {
+		return false, 0, fmt.Errorf("error loading dataset: %s", err.Error())
+	}
+
+	approved, fraudScore, err := vectorDatabase.VerifyVector(vector)
+	if err != nil {
+		return false, 0, fmt.Errorf("error verifying vector: %s", err.Error())
+	}
+
+	return approved, fraudScore, nil
 }
 
 func loadReferenceVectors(path string) ([]TransactionVector, error) {
@@ -70,7 +88,7 @@ func loadReferenceVectors(path string) ([]TransactionVector, error) {
 	return vectors, nil
 }
 
-func transactionToVector(transaction Transaction, normalizationConstants NormalizationConstants, mccRiskMap map[string]float32) ([]float32, error) {
+func TransactionToVector(transaction Transaction, normalizationConstants NormalizationConstants, mccRiskMap map[string]float32) ([]float32, error) {
 	requestedAt, err := time.Parse(time.RFC3339Nano, transaction.Transaction.RequestedAt)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing requestedAt [%s] err %s", transaction.Transaction.RequestedAt, err.Error())
@@ -85,7 +103,7 @@ func transactionToVector(transaction Transaction, normalizationConstants Normali
 			return nil, fmt.Errorf("error parsing lastTransaction.timestamp [%s] err %s", transaction.LastTransaction.Timestamp, err.Error())
 		}
 		minutesSinceLastTx = clampFloat32(float32(requestedAt.Sub(lastTransactionTime).Minutes()) / normalizationConstants.MaxMinutes)
-		
+
 		kmFromLastTx = clampFloat32(transaction.LastTransaction.KmFromCurrent / normalizationConstants.MaxKm)
 	} else {
 		minutesSinceLastTx = -1
@@ -124,7 +142,7 @@ func transactionToVector(transaction Transaction, normalizationConstants Normali
 
 }
 
-func loadNormalizationConstants(path string) (NormalizationConstants, error) {
+func LoadNormalizationConstants(path string) (NormalizationConstants, error) {
 	var normalizationConstants NormalizationConstants
 
 	inputData, err := os.ReadFile(path)
@@ -140,7 +158,7 @@ func loadNormalizationConstants(path string) (NormalizationConstants, error) {
 	return normalizationConstants, nil
 }
 
-func loadMccRiskMap(path string) (map[string]float32, error) {
+func LoadMccRiskMap(path string) (map[string]float32, error) {
 	var mccRiskMap map[string]float32
 
 	inputData, err := os.ReadFile(path)

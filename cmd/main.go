@@ -23,7 +23,11 @@ func main() {
 		0.15,   // 12 - mcc_risk
 		0.006,  // 13 - merchant_avg_amount
 	}
-	approved, fraudScore := internal.LoadDatasetAndVerifyVector("./resources/references.json", vector)
+	approved, fraudScore, err := internal.LoadDatasetAndVerifyVector("./resources/references.json", vector)
+	if err != nil {
+		fmt.Println("error loading dataset:", err)
+		return
+	}
 	fmt.Println("aproved:", approved)
 	fmt.Println("fraudScore:", fraudScore)
 }

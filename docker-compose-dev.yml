@@ -24,13 +24,13 @@ services:
       - ./:/app
     networks:
       - api
-    deploy:
-      resources:
-        limits:
-          # cpus: "0.40"
-          cpus: "0.40"
-          # memory: "165MB"
-          memory: "300MB"
+    # deploy:
+    #   resources:
+    #     limits:
+    #       # cpus: "0.40"
+    #       cpus: "0.40"
+    #       # memory: "165MB"
+    #       memory: "300MB"
 
   api2:
     <<: *api

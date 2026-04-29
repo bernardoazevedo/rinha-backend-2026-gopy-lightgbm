@@ -1,15 +1,21 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
+	"github.com/bernardoazevedo/rinha-de-backend-2026/internal"
 	"github.com/fasthttp/router"
 	"github.com/joho/godotenv"
 	"github.com/valyala/fasthttp"
 )
+
+var vectorDatabase *internal.VectorDatabase
+var normalizationConstants internal.NormalizationConstants
+var mccRiskMap map[string]float32
 
 func main() {
 	err := godotenv.Load()
@@ -24,10 +30,27 @@ func main() {
 		log.SetFlags(0)
 	}
 
+	log.Printf("loading dataset")
+	vectorDatabase, err = internal.LoadDataset("./resources/references.json")
+	if err != nil {
+		log.Fatal("Error loading dataset:", err)
+	}
+
+	normalizationConstants, err = internal.LoadNormalizationConstants("./resources/normalization.json")
+	if err != nil {
+		log.Fatalf("Error loading normalization constants: %s", err)
+	}
+
+	mccRiskMap, err = internal.LoadMccRiskMap("./resources/mcc_risk.json")
+	if err != nil {
+		log.Fatalf("Error loading mcc risk map: %s", err)
+	}
+
 	r := router.New()
 	r.GET("/ready", isReady)
+	r.POST("/fraud-score", fraudScore)
 
-	println("application started")
+	log.Printf("application started")
 
 	if os.Getenv("DEBUG") == "true" {
 		log.Fatal(fasthttp.ListenAndServe(":1234", Logger(r.Handler)))
@@ -62,4 +85,43 @@ func isReady(ctx *fasthttp.RequestCtx) {
 		ctx.Response.SetStatusCode(fasthttp.StatusServiceUnavailable)
 		return
 	}
+}
+
+func fraudScore(ctx *fasthttp.RequestCtx) {
+	var transaction internal.Transaction
+	err := json.Unmarshal(ctx.Request.Body(), &transaction)
+	if err != nil {
+		log.Printf("Error unmarshalling transaction: %s", err)
+		ctx.Response.SetStatusCode(fasthttp.StatusBadRequest)
+		return
+	}
+
+	vector, err := internal.TransactionToVector(transaction, normalizationConstants, mccRiskMap)
+	if err != nil {
+		log.Printf("Error transforming transaction to vector: %s", err)
+		ctx.Response.SetStatusCode(fasthttp.StatusInternalServerError)
+		return
+	}
+
+	approved, fraudScore, err := vectorDatabase.VerifyVector(vector)
+	if err != nil {
+		log.Printf("Error verifying vector: %s", err)
+		ctx.Response.SetStatusCode(fasthttp.StatusInternalServerError)
+		return
+	}
+
+	response := internal.FraudScoreResponse{
+		Approved:   approved,
+		FraudScore: fraudScore,
+	}
+
+	jsonResponse, err := json.Marshal(response)
+	if err != nil {
+		log.Printf("Error marshalling response: %s", err)
+		ctx.Response.SetStatusCode(fasthttp.StatusInternalServerError)
+		return
+	}
+
+	ctx.Response.SetStatusCode(fasthttp.StatusOK)
+	ctx.Response.SetBody(jsonResponse)
 }

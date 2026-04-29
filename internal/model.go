@@ -1,5 +1,7 @@
 package internal
 
+import "github.com/wizenheimer/comet"
+
 // https://github.com/zanfranceschi/rinha-de-backend-2026/blob/main/docs/br/API.md#campos-da-requisição
 //
 // ### Campos da requisição
@@ -78,3 +80,14 @@ type TransactionVector struct {
 	Vector []float32 `json:"vector"`
 	Label  string    `json:"label"`
 }
+
+type VectorDatabase struct {
+	index    *comet.FlatIndex
+	labelMap map[uint32]string
+}
+
+type FraudScoreResponse struct {
+	Approved   bool    `json:"approved"`
+	FraudScore float32 `json:"fraud_score"`
+}
+	
