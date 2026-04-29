@@ -1,11 +1,9 @@
-package main
+package internal
 
 import (
 	"encoding/json"
 	"math"
 	"testing"
-
-	"github.com/bernardoazevedo/rinha-de-backend-2026/internal"
 )
 
 func TestTransactionToVector(t *testing.T) {
@@ -37,9 +35,9 @@ func TestTransactionToVector(t *testing.T) {
 			"last_transaction": null
 		}`,
 	}
-	var transactions []internal.Transaction
+	var transactions []Transaction
 	for _, transactionJson := range transactionsJson {
-		var transaction internal.Transaction
+		var transaction Transaction
 		err = json.Unmarshal([]byte(transactionJson), &transaction)
 		if err != nil {
 			t.Fatalf("error unmarshalling transactionJson err %v", err)
@@ -118,8 +116,8 @@ func TestTransactionToVector(t *testing.T) {
 }
 
 func TestLoadDatasetAndVerifyVector(t *testing.T) {
-	vectors := map[string][]float32{
-		"legit": {
+	vectors := map[bool][]float32{
+		true: {
 			0.0041, // 0  - amount
 			0.1667, // 1  - installments
 			0.05,   // 2  - amount_vs_avg
@@ -135,7 +133,7 @@ func TestLoadDatasetAndVerifyVector(t *testing.T) {
 			0.15,   // 12 - mcc_risk
 			0.006,  // 13 - merchant_avg_amount
 		},
-		"fraud": {
+		false: {
 			0.9506, // 0  - amount
 			0.8333, // 1  - installments
 			1.0,    // 2  - amount_vs_avg
@@ -153,10 +151,10 @@ func TestLoadDatasetAndVerifyVector(t *testing.T) {
 		},
 	}
 
-	for label, vector := range vectors {
-		result := loadDatasetAndVerifyVector("../resources/references.json", vector)
-		if result != label {
-			t.Errorf("vector %s: got label %s, expected %s", label, result, label)
+	for expectedApproved, vector := range vectors {
+		approved, _ := LoadDatasetAndVerifyVector("../resources/references.json", vector)
+		if approved != expectedApproved {
+			t.Errorf("vector %v: got label %v, expected %v", vector, approved, expectedApproved)
 		}
 	}
 }
