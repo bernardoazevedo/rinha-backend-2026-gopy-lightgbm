@@ -82,7 +82,9 @@ type TransactionVector struct {
 }
 
 type VectorDatabase struct {
-	index    *comet.FlatIndex
+	// index    *comet.FlatIndex
+	// index    *comet.HNSWIndex
+	Index    *comet.PersistentHybridIndex
 	labelMap map[uint32]string
 }
 

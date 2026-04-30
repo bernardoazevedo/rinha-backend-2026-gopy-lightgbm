@@ -5,7 +5,7 @@ services:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - api1
-      - api2
+      # - api2
     ports:
       - "9999:9999"
     networks:
@@ -22,6 +22,7 @@ services:
       dockerfile: Dockerfile.dev
     volumes:
       - ./:/app
+      - vector_data:/app/vector_data
     networks:
       - api
     # deploy:
@@ -32,9 +33,12 @@ services:
     #       # memory: "165MB"
     #       memory: "300MB"
 
-  api2:
-    <<: *api
+  # api2:
+  #   <<: *api
 
 networks:
   api:
     driver: bridge
+
+volumes:
+  vector_data:

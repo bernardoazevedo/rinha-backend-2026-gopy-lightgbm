@@ -10,9 +10,24 @@ import (
 )
 
 func LoadDataset(datasetPath string) (*VectorDatabase, error) {
-	index, err := comet.NewFlatIndex(14, comet.Euclidean)
+	var err error
+
+	config := comet.DefaultStorageConfig("./asd")
+	config.VectorIndexTemplate, err = comet.NewFlatIndex(14, comet.Euclidean)
+	// index, err := comet.NewHNSWIndex(
+	// 	14,              // vector dimensions
+	// 	comet.Euclidean, // distance function
+	// 	4,               // M: connections per layer
+	// 	100,              // efConstruction: build quality
+	// 	50,             // efSearch: search quality
+	// )
 	if err != nil {
-		return nil, fmt.Errorf("error creating flat index: %s", err.Error())
+		return nil, fmt.Errorf("error creating vector database: %s", err.Error())
+	}
+
+	store, err := comet.OpenPersistentHybridIndex(config)
+	if err != nil {
+		return nil, fmt.Errorf("error opening persistent hybrid index: %s", err.Error())
 	}
 
 	referenceVectors, err := loadReferenceVectors(datasetPath)
@@ -23,20 +38,31 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	labelMap := make(map[uint32]string, len(referenceVectors))
 
 	for _, ref := range referenceVectors {
-		node := comet.NewVectorNode(ref.Vector)
-		labelMap[node.ID()] = ref.Label
-		err = index.Add(*node)
+		// node := comet.NewVectorNode(ref.Vector)
+		// println(node.ID())
+		// labelMap[node.ID()] = ref.Label // se tiver salvando o label na base de dados, posso remover esse map
+		// err = index.Add(*node)
+		nodeId, err := store.Add(ref.Vector, ref.Label, nil)
+		println(nodeId)
 		if err != nil {
 			return nil, fmt.Errorf("error adding vector to index: %s", err.Error())
 		}
+		labelMap[nodeId] = ref.Label // se tiver salvando o label na base de dados, posso remover esse map
 	}
 
-	return &VectorDatabase{index: index, labelMap: labelMap}, nil
+	err = store.Flush()
+	if err != nil {
+		return nil, fmt.Errorf("error saving to disk: %s", err.Error())
+	}
+
+	store.TriggerCompaction()
+
+	return &VectorDatabase{Index: store, labelMap: labelMap}, nil
 }
 
 func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
 	kResults := 5
-	results, err := vd.index.NewSearch().WithQuery(vector).WithK(kResults).Execute()
+	results, err := vd.Index.NewSearch().WithVector(vector).WithK(kResults).Execute()
 	if err != nil {
 		return false, 0, fmt.Errorf("error searching index: %s", err.Error())
 	}

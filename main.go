@@ -31,10 +31,11 @@ func main() {
 	}
 
 	log.Printf("loading dataset")
-	vectorDatabase, err = internal.LoadDataset("./resources/references.json")
+	vectorDatabase, err = internal.LoadDataset("./resources/references-half-lite.json")
 	if err != nil {
 		log.Fatal("Error loading dataset:", err)
 	}
+	defer vectorDatabase.Index.Close()
 
 	normalizationConstants, err = internal.LoadNormalizationConstants("./resources/normalization.json")
 	if err != nil {
