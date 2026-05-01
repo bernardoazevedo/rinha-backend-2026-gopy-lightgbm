@@ -1,82 +1,189 @@
 package internal
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
-	"github.com/wizenheimer/comet"
+	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
-func LoadDataset(datasetPath string) (*VectorDatabase, error) {
-	index, err := comet.NewIVFPQIndex(
-		14,              // vector dimensions
-		comet.Euclidean, // distance function
-		1732,            // nClusters: number of partitions
-		7,               // m: number of PQ subspaces
-		8,               // nBits: bits per PQ subspace
-	)
+func LoadFileToMemory(dbPath string) (*sql.DB, error) {
+	fileDB, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("error creating ivfpq index: %s", err.Error())
+		return nil, fmt.Errorf("error opening file database: %w", err)
 	}
+	defer fileDB.Close()
 
-	referenceVectors, err := LoadReferenceVectors(datasetPath)
+	memDB, err := sql.Open("sqlite3", "file::memory:?cache=shared")
 	if err != nil {
-		return nil, fmt.Errorf("error loading reference vectors: %s", err.Error())
+		return nil, fmt.Errorf("error opening memory database: %w", err)
 	}
-
-	labelMap := make(map[uint32]string, len(referenceVectors))
-	var nodes []comet.VectorNode
-	for _, ref := range referenceVectors {
-		node := comet.NewVectorNode(ref.Vector)
-		labelMap[node.ID()] = ref.Label
-		nodes = append(nodes, *node)
-	}
-
-	log.Println("training...")
-	err = index.Train(nodes)
+	_, err = memDB.Exec("PRAGMA journal_mode=OFF;")
 	if err != nil {
-		return nil, fmt.Errorf("error training index: %s", err.Error())
+		log.Fatal(err)
+	}
+	_, err = memDB.Exec("PRAGMA synchronous=OFF;")
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = memDB.Exec("PRAGMA cache_size=-100;")
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	log.Println("adding vectors...")
-	length := len(nodes)
-	for i, node := range nodes {
-		if i%100 == 0 {
-			log.Printf("adding vector #%d/%d", i, length)
-		}
-		err = index.Add(node)
-		if err != nil {
-			return nil, fmt.Errorf("error adding vector to index: %s", err.Error())
-		}
+	fileConn, err := fileDB.Conn(context.Background())
+	if err != nil {
+		memDB.Close()
+		return nil, fmt.Errorf("error getting file connection: %w", err)
+	}
+	defer fileConn.Close()
+
+	memConn, err := memDB.Conn(context.Background())
+	if err != nil {
+		memDB.Close()
+		return nil, fmt.Errorf("error getting memory connection: %w", err)
+	}
+	defer memConn.Close()
+
+	err = memConn.Raw(func(memDC interface{}) error {
+		return fileConn.Raw(func(fileDC interface{}) error {
+			memSQLiteConn, ok := memDC.(*sqlite3.SQLiteConn)
+			if !ok {
+				return fmt.Errorf("memory connection is not *sqlite3.SQLiteConn")
+			}
+			fileSQLiteConn, ok := fileDC.(*sqlite3.SQLiteConn)
+			if !ok {
+				return fmt.Errorf("file connection is not *sqlite3.SQLiteConn")
+			}
+
+			backup, err := memSQLiteConn.Backup("main", fileSQLiteConn, "main")
+			if err != nil {
+				return fmt.Errorf("error creating backup: %w", err)
+			}
+
+			_, err = backup.Step(-1)
+			if err != nil {
+				return fmt.Errorf("error during backup step: %w", err)
+			}
+
+			return backup.Finish()
+		})
+	})
+	if err != nil {
+		memDB.Close()
+		return nil, fmt.Errorf("error during backup: %w", err)
 	}
 
-	return &VectorDatabase{index: index, labelMap: labelMap}, nil
+	return memDB, nil
 }
 
-func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
-	kResults := 5
-	results, err := vd.index.NewSearch().
-		WithQuery(vector).
-		WithK(kResults).
-		WithNProbes(8).
-		Execute()
+func LoadMemoryToFile(memDB *sql.DB, filePath string) (*sql.DB, error) {
+	os.Remove(filePath)
+
+	fileDB, err := sql.Open("sqlite3", filePath)
 	if err != nil {
-		return false, 0, fmt.Errorf("error searching index: %s", err.Error())
+		return nil, fmt.Errorf("error opening file database: %w", err)
+	}
+	defer fileDB.Close()
+
+	fileConn, err := fileDB.Conn(context.Background())
+	if err != nil {
+		memDB.Close()
+		return nil, fmt.Errorf("error getting file connection: %w", err)
+	}
+	defer fileConn.Close()
+
+	memConn, err := memDB.Conn(context.Background())
+	if err != nil {
+		memDB.Close()
+		return nil, fmt.Errorf("error getting memory connection: %w", err)
+	}
+	defer memConn.Close()
+
+	err = fileConn.Raw(func(fileDC interface{}) error {
+		return memConn.Raw(func(memDC interface{}) error {
+			fileSQLiteConn, ok := fileDC.(*sqlite3.SQLiteConn)
+			if !ok {
+				return fmt.Errorf("file connection is not *sqlite3.SQLiteConn")
+			}
+			memSQLiteConn, ok := memDC.(*sqlite3.SQLiteConn)
+			if !ok {
+				return fmt.Errorf("memory connection is not *sqlite3.SQLiteConn")
+			}
+
+			backup, err := fileSQLiteConn.Backup("main", memSQLiteConn, "main")
+			if err != nil {
+				return fmt.Errorf("error creating backup: %w", err)
+			}
+
+			_, err = backup.Step(-1)
+			if err != nil {
+				return fmt.Errorf("error during backup step: %w", err)
+			}
+
+			return backup.Finish()
+		})
+	})
+	if err != nil {
+		fileDB.Close()
+		return nil, fmt.Errorf("error during backup: %w", err)
+	}
+
+	return fileDB, nil
+}
+
+func Query(db *sql.DB, vectorQuery []float32) (bool, float32, error) {
+	query, err := sqlite_vec.SerializeFloat32(vectorQuery)
+	if err != nil {
+		return false, 0, fmt.Errorf("error serializing vector: %s", err)
+	}
+	nResults := 5
+
+	selectStart := time.Now()
+	rows, err := db.Query(`
+		SELECT
+			distance,
+			legit
+		FROM vec_items
+		WHERE embedding MATCH ?
+		AND k = ?
+	`, query, nResults)
+
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	var fraudCount int
-	for _, result := range results {
-		if vd.labelMap[result.GetId()] == "fraud" {
+	for rows.Next() {
+		var distance float64
+		var legit bool
+
+		err = rows.Scan(&distance, &legit)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if !legit {
 			fraudCount++
 		}
+		fmt.Printf("distance=%f, legit=%t\n", distance, legit)
 	}
+	err = rows.Err()
+	if err != nil {
+		log.Fatal((err))
+	}
+
+	fmt.Printf("\n[select] query took %v\n", time.Since(selectStart))
 
 	const threshold = 0.6
 
-	fraudScore := float32(fraudCount) / float32(kResults)
+	fraudScore := float32(fraudCount) / float32(nResults)
 	if fraudScore >= threshold {
 		return false, fraudScore, nil
 	}
@@ -85,17 +192,7 @@ func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) 
 }
 
 func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, float32, error) {
-	vectorDatabase, err := LoadDataset(datasetPath)
-	if err != nil {
-		return false, 0, fmt.Errorf("error loading dataset: %s", err.Error())
-	}
-
-	approved, fraudScore, err := vectorDatabase.VerifyVector(vector)
-	if err != nil {
-		return false, 0, fmt.Errorf("error verifying vector: %s", err.Error())
-	}
-
-	return approved, fraudScore, nil
+	return true, 0, nil
 }
 
 func LoadReferenceVectors(path string) ([]TransactionVector, error) {

@@ -3,7 +3,10 @@ package internal
 import (
 	"encoding/json"
 	"math"
+	"os"
 	"testing"
+
+	"github.com/joho/godotenv"
 )
 
 func TestTransactionToVector(t *testing.T) {
@@ -116,6 +119,11 @@ func TestTransactionToVector(t *testing.T) {
 }
 
 func TestLoadDatasetAndVerifyVector(t *testing.T) {
+	err := godotenv.Load()
+	if err != nil {
+		t.Fatal("Error loading .env file")
+	}
+
 	vectors := map[bool][]float32{
 		true: {
 			0.0041, // 0  - amount
@@ -152,7 +160,7 @@ func TestLoadDatasetAndVerifyVector(t *testing.T) {
 	}
 
 	for expectedApproved, vector := range vectors {
-		approved, _, err := LoadDatasetAndVerifyVector("../resources/references.json", vector)
+		approved, _, err := LoadDatasetAndVerifyVector("../resources/"+os.Getenv("DATASET"), vector)
 		if err != nil {
 			t.Fatalf("LoadDatasetAndVerifyVector returned error: %v", err)
 		}

@@ -1,23 +1,28 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
+	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	"github.com/bernardoazevedo/rinha-de-backend-2026/internal"
 	"github.com/fasthttp/router"
 	"github.com/joho/godotenv"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/valyala/fasthttp"
 )
 
-var vectorDatabase *internal.VectorDatabase
+var db *sql.DB
 var normalizationConstants internal.NormalizationConstants
 var mccRiskMap map[string]float32
 
 func main() {
+	sqlite_vec.Auto()
+
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
@@ -30,11 +35,13 @@ func main() {
 		log.SetFlags(0)
 	}
 
-	log.Printf("loading dataset")
-	vectorDatabase, err = internal.LoadDataset("./resources/references.json")
+	dbPath := "./transaction.db"
+	println("loading database from file to memory...")
+	db, err = internal.LoadFileToMemory(dbPath)
 	if err != nil {
-		log.Fatal("Error loading dataset:", err)
+		log.Fatal(err)
 	}
+	defer db.Close()
 
 	normalizationConstants, err = internal.LoadNormalizationConstants("./resources/normalization.json")
 	if err != nil {
@@ -103,7 +110,7 @@ func fraudScore(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	approved, fraudScore, err := vectorDatabase.VerifyVector(vector)
+	approved, fraudScore, err := internal.Query(db, vector)
 	if err != nil {
 		log.Printf("Error verifying vector: %s", err)
 		ctx.Response.SetStatusCode(fasthttp.StatusInternalServerError)
