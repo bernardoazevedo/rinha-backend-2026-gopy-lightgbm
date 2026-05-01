@@ -11,12 +11,11 @@ import (
 )
 
 func LoadDataset(datasetPath string) (*VectorDatabase, error) {
-	index, err := comet.NewHNSWIndex(
+	index, err := comet.NewPQIndex(
 		14,              // vector dimensions
 		comet.Euclidean, // distance function
-		12,              // M: connections per layer
-		200,             // efConstruction: build quality
-		200,             // efSearch: search quality
+		7,               // M: number of subquantizers
+		4,               // nBits: bits per subquantizer
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating flat index: %s", err.Error())
@@ -29,14 +28,26 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 
 	labelMap := make(map[uint32]string, len(referenceVectors))
 
-	length := len(referenceVectors)
-	for i, ref := range referenceVectors {
+	var nodes []comet.VectorNode
+	for _, ref := range referenceVectors {
+		node := comet.NewVectorNode(ref.Vector)
+		labelMap[node.ID()] = ref.Label
+		nodes = append(nodes, *node)
+	}
+
+	log.Println("training...")
+	err = index.Train(nodes)
+	if err != nil {
+		return nil, fmt.Errorf("error training index: %s", err.Error())
+	}
+
+	log.Println("adding vectors...")
+	length := len(nodes)
+	for i, node := range nodes {
 		if i%100 == 0 {
 			log.Printf("loading vector %d/%d", i, length)
 		}
-		node := comet.NewVectorNode(ref.Vector)
-		labelMap[node.ID()] = ref.Label
-		err = index.Add(*node)
+		err = index.Add(node)
 		if err != nil {
 			return nil, fmt.Errorf("error adding vector to index: %s", err.Error())
 		}
