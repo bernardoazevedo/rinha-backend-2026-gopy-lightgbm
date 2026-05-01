@@ -1,6 +1,6 @@
 module github.com/bernardoazevedo/rinha-de-backend-2026
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/fasthttp/router v1.5.4
