@@ -16,7 +16,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var db *sql.DB
+var queryStmt *sql.Stmt
 var normalizationConstants internal.NormalizationConstants
 var mccRiskMap map[string]float32
 
@@ -37,11 +37,16 @@ func main() {
 
 	dbPath := "./transaction.db"
 	println("loading database from file to memory...")
-	db, err = internal.LoadFileToMemory(dbPath)
+	db, err := internal.LoadFileToMemory(dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
+
+	queryStmt, err = internal.PrepareQueryStatement(db)
+	if err != nil {
+		log.Fatalf("Error preparing query statement: %s", err)
+	}
 
 	normalizationConstants, err = internal.LoadNormalizationConstants("./resources/normalization.json")
 	if err != nil {
@@ -110,7 +115,7 @@ func fraudScore(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	approved, fraudScore, err := internal.Query(db, vector)
+	approved, fraudScore, err := internal.Query(queryStmt, vector)
 	if err != nil {
 		log.Printf("Error verifying vector: %s", err)
 		ctx.Response.SetStatusCode(fasthttp.StatusInternalServerError)

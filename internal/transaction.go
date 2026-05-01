@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -26,15 +25,19 @@ func LoadFileToMemory(dbPath string) (*sql.DB, error) {
 	}
 	_, err = memDB.Exec("PRAGMA journal_mode=OFF;")
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("error setting journal mode: %w", err)
 	}
 	_, err = memDB.Exec("PRAGMA synchronous=OFF;")
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("error setting synchronous mode: %w", err)
 	}
-	_, err = memDB.Exec("PRAGMA cache_size=-100;")
+	_, err = memDB.Exec("PRAGMA cache_size=-100000;")
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("error setting cache size: %w", err)
+	}
+	_, err = memDB.Exec("PRAGMA temp_store=MEMORY;")
+	if err != nil {
+		return nil, fmt.Errorf("error setting temp store: %w", err)
 	}
 
 	fileConn, err := fileDB.Conn(context.Background())
@@ -138,47 +141,47 @@ func LoadMemoryToFile(memDB *sql.DB, filePath string) (*sql.DB, error) {
 	return fileDB, nil
 }
 
-func Query(db *sql.DB, vectorQuery []float32) (bool, float32, error) {
-	query, err := sqlite_vec.SerializeFloat32(vectorQuery)
-	if err != nil {
-		return false, 0, fmt.Errorf("error serializing vector: %s", err)
-	}
-	nResults := 5
-
-	selectStart := time.Now()
-	rows, err := db.Query(`
+func PrepareQueryStatement(db *sql.DB) (*sql.Stmt, error) {
+	var err error
+	queryStmt, err := db.Prepare(`
 		SELECT
-			distance,
 			legit
 		FROM vec_items
 		WHERE embedding MATCH ?
 		AND k = ?
-	`, query, nResults)
+	`)
+	return queryStmt, err
+}
 
+func Query(stmt *sql.Stmt, vectorQuery []float32) (bool, float32, error) {
+	selectStart := time.Now()
+	
+	query, err := sqlite_vec.SerializeFloat32(vectorQuery)
 	if err != nil {
-		log.Fatal(err)
+		return false, 0, fmt.Errorf("error serializing vector: %s", err)
 	}
+	const nResults = 5
+
+	rows, err := stmt.Query(query, nResults)
+	if err != nil {
+		return false, 0, fmt.Errorf("error querying vec_items: %w", err)
+	}
+	defer rows.Close()
 
 	var fraudCount int
 	for rows.Next() {
-		var distance float64
 		var legit bool
-
-		err = rows.Scan(&distance, &legit)
+		err = rows.Scan(&legit)
 		if err != nil {
-			log.Fatal(err)
+			return false, 0, fmt.Errorf("error scanning row: %w", err)
 		}
-
 		if !legit {
 			fraudCount++
 		}
-		fmt.Printf("distance=%f, legit=%t\n", distance, legit)
 	}
-	err = rows.Err()
-	if err != nil {
-		log.Fatal((err))
+	if err = rows.Err(); err != nil {
+		return false, 0, fmt.Errorf("error iterating rows: %w", err)
 	}
-
 	fmt.Printf("\n[select] query took %v\n", time.Since(selectStart))
 
 	const threshold = 0.6

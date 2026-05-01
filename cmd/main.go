@@ -61,7 +61,13 @@ func main() {
 			0.75,   // 12 - mcc_risk
 			0.0055, // 13 - merchant_avg_amount
 		}
-		approved, fraudScore, err := internal.Query(db, q)
+
+		queryStmt, err := internal.PrepareQueryStatement(db)
+		if err != nil {
+			log.Printf("Error preparing query statement: %s", err)
+			return
+		}
+		approved, fraudScore, err := internal.Query(queryStmt, q)
 		if err != nil {
 			log.Printf("Error verifying vector: %s", err)
 			return
