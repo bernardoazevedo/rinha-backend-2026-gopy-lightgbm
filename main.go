@@ -31,7 +31,7 @@ func main() {
 	}
 
 	log.Printf("loading dataset")
-	vectorDatabase, err = internal.LoadDataset("./resources/references-lite.json")
+	vectorDatabase, err = internal.LoadDataset("./resources/references.json")
 	if err != nil {
 		log.Fatal("Error loading dataset:", err)
 	}

@@ -61,7 +61,7 @@ func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) 
 	results, err := vd.index.NewSearch().
 		WithQuery(vector).
 		WithK(kResults).
-		WithNProbes(1).
+		WithNProbes(8).
 		Execute()
 	if err != nil {
 		return false, 0, fmt.Errorf("error searching index: %s", err.Error())
