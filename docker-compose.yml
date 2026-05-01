@@ -13,10 +13,10 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.15"
-          memory: "15MB"
+          cpus: "0.20"
+          memory: "20MB"
 
-  api1: &api
+  api1:
     build: 
       context: .
       dockerfile: Dockerfile
@@ -25,58 +25,21 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.10"
-          memory: "25MB"
+          cpus: "0.40"
+          memory: "165MB"
 
   api2:
-    <<: *api
-
-  # health: 
-  #   build: 
-  #     context: .
-  #     dockerfile: health/build/Dockerfile
-  #   networks:
-  #     - api
-  #     - payment-processor
-  #   depends_on:
-  #     - redis
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         cpus: "0.10"
-  #         memory: "10MB"
-
-  # payment: 
-  #   build: 
-  #     context: .
-  #     dockerfile: payment/build/Dockerfile
-  #   networks:
-  #     - api
-  #     - payment-processor
-  #   depends_on:
-  #     - redis
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         cpus: "0.50"
-  #         memory: "190MB"
-
-  # redis:
-  #   image: "redis:alpine"
-  #   volumes:
-  #     - redis-data:/data
-  #   networks:
-  #     - api
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         cpus: "0.35"
-  #         memory: "35MB"
-# volumes:
-#   redis-data:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    networks:
+      - api
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: "165MB"
 
 networks:
   api:
     driver: bridge
-  # payment-processor:
-  #   external: true
