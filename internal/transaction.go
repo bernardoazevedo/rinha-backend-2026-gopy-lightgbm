@@ -10,7 +10,13 @@ import (
 )
 
 func LoadDataset(datasetPath string) (*VectorDatabase, error) {
-	index, err := comet.NewFlatIndex(14, comet.Euclidean)
+	index, err := comet.NewHNSWIndex(
+		14,              // vector dimensions
+		comet.Euclidean, // distance function
+		4,               // M: connections per layer
+		100,              // efConstruction: build quality
+		50,             // efSearch: search quality
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating flat index: %s", err.Error())
 	}

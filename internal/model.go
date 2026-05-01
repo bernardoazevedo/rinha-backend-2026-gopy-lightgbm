@@ -82,7 +82,7 @@ type TransactionVector struct {
 }
 
 type VectorDatabase struct {
-	index    *comet.FlatIndex
+	index    *comet.HNSWIndex
 	labelMap map[uint32]string
 }
 
