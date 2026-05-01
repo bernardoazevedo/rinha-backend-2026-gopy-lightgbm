@@ -152,7 +152,7 @@ func TestLoadDatasetAndVerifyVector(t *testing.T) {
 	}
 
 	for expectedApproved, vector := range vectors {
-		approved, _, err := LoadDatasetAndVerifyVector("../resources/references.json", vector)
+		approved, _, err := LoadDatasetAndVerifyVector("../resources/references-lite.bin", vector)
 		if err != nil {
 			t.Fatalf("LoadDatasetAndVerifyVector returned error: %v", err)
 		}

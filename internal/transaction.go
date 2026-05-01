@@ -1,14 +1,22 @@
 package internal
 
 import (
+	"bufio"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"math"
 	"os"
 	"time"
 
 	"github.com/wizenheimer/comet"
 )
+
+const vectorDimensions = 14
+const recordSize = 1 + vectorDimensions*4 // 1 byte label + 14 x float32
+const trainingSampleSize = 100_000
 
 func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	index, err := comet.NewIVFPQIndex(
@@ -22,38 +30,107 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 		return nil, fmt.Errorf("error creating ivfpq index: %s", err.Error())
 	}
 
-	referenceVectors, err := loadReferenceVectors(datasetPath)
+	f, err := os.Open(datasetPath)
 	if err != nil {
-		return nil, fmt.Errorf("error loading reference vectors: %s", err.Error())
+		return nil, fmt.Errorf("error opening binary dataset: %s", err.Error())
+	}
+	defer f.Close()
+
+	reader := bufio.NewReaderSize(f, 256*1024)
+
+	// Read record count from header
+	var count uint32
+	if err := binary.Read(reader, binary.LittleEndian, &count); err != nil {
+		return nil, fmt.Errorf("error reading binary header: %s", err.Error())
 	}
 
-	labelMap := make(map[uint32]string, len(referenceVectors))
-	var nodes []comet.VectorNode
-	for _, ref := range referenceVectors {
-		node := comet.NewVectorNode(ref.Vector)
-		labelMap[node.ID()] = ref.Label
-		nodes = append(nodes, *node)
+	log.Printf("dataset has %d vectors", count)
+
+	// Determine training sample size
+	trainSize := trainingSampleSize
+	if int(count) < trainSize {
+		trainSize = int(count)
 	}
 
-	log.Println("training...")
-	err = index.Train(nodes)
-	if err != nil {
+	// Read training sample
+	trainNodes := make([]comet.VectorNode, 0, trainSize)
+	trainLabels := make([]string, 0, trainSize)
+	recordBuf := make([]byte, recordSize)
+
+	const labelFraud = "fraud"
+	const labelLegit = "legit"
+
+	for i := 0; i < trainSize; i++ {
+		if _, err := io.ReadFull(reader, recordBuf); err != nil {
+			return nil, fmt.Errorf("error reading training record #%d: %s", i, err.Error())
+		}
+
+		vector := decodeVector(recordBuf)
+		label := labelLegit
+		if recordBuf[0] == 1 {
+			label = labelFraud
+		}
+
+		node := comet.NewVectorNode(vector)
+		trainNodes = append(trainNodes, *node)
+		trainLabels = append(trainLabels, label)
+	}
+
+	log.Printf("training with %d vectors...", trainSize)
+	if err := index.Train(trainNodes); err != nil {
 		return nil, fmt.Errorf("error training index: %s", err.Error())
 	}
 
-	log.Println("adding vectors...")
-	length := len(nodes)
-	for i, node := range nodes {
-		if i%100 == 0 {
-			log.Printf("adding vector #%d/%d", i, length)
+	// Add training vectors to index and build label map
+	labelMap := make(map[uint32]string, int(count))
+	for i, node := range trainNodes {
+		if err := index.Add(node); err != nil {
+			return nil, fmt.Errorf("error adding training vector #%d: %s", i, err.Error())
 		}
-		err = index.Add(node)
-		if err != nil {
-			return nil, fmt.Errorf("error adding vector to index: %s", err.Error())
+		labelMap[node.ID()] = trainLabels[i]
+	}
+
+	// Free training slices
+	trainNodes = nil
+	trainLabels = nil
+
+	// Stream remaining vectors one at a time
+	remaining := int(count) - trainSize
+	log.Printf("adding remaining %d vectors...", remaining)
+	for i := 0; i < remaining; i++ {
+		if _, err := io.ReadFull(reader, recordBuf); err != nil {
+			return nil, fmt.Errorf("error reading record #%d: %s", trainSize+i, err.Error())
+		}
+
+		vector := decodeVector(recordBuf)
+		label := labelLegit
+		if recordBuf[0] == 1 {
+			label = labelFraud
+		}
+
+		node := comet.NewVectorNode(vector)
+		labelMap[node.ID()] = label
+		if err := index.Add(*node); err != nil {
+			return nil, fmt.Errorf("error adding vector #%d: %s", trainSize+i, err.Error())
+		}
+
+		if (i+1)%500000 == 0 {
+			log.Printf("added %d/%d remaining vectors", i+1, remaining)
 		}
 	}
 
+	log.Printf("dataset loaded: %d vectors indexed", count)
 	return &VectorDatabase{index: index, labelMap: labelMap}, nil
+}
+
+// decodeVector extracts 14 float32 values from a binary record buffer (skipping the first label byte).
+func decodeVector(recordBuf []byte) []float32 {
+	vector := make([]float32, vectorDimensions)
+	for j := 0; j < vectorDimensions; j++ {
+		bits := binary.LittleEndian.Uint32(recordBuf[1+j*4:])
+		vector[j] = math.Float32frombits(bits)
+	}
+	return vector
 }
 
 func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
