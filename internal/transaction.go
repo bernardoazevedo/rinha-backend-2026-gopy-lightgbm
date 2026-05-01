@@ -3,6 +3,7 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -13,9 +14,9 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	index, err := comet.NewHNSWIndex(
 		14,              // vector dimensions
 		comet.Euclidean, // distance function
-		4,               // M: connections per layer
-		100,              // efConstruction: build quality
-		50,             // efSearch: search quality
+		12,              // M: connections per layer
+		200,             // efConstruction: build quality
+		200,             // efSearch: search quality
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating flat index: %s", err.Error())
@@ -28,7 +29,11 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 
 	labelMap := make(map[uint32]string, len(referenceVectors))
 
-	for _, ref := range referenceVectors {
+	length := len(referenceVectors)
+	for i, ref := range referenceVectors {
+		if i%100 == 0 {
+			log.Printf("loading vector %d/%d", i, length)
+		}
 		node := comet.NewVectorNode(ref.Vector)
 		labelMap[node.ID()] = ref.Label
 		err = index.Add(*node)
