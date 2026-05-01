@@ -3,6 +3,7 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -10,12 +11,10 @@ import (
 )
 
 func LoadDataset(datasetPath string) (*VectorDatabase, error) {
-	index, err := comet.NewHNSWIndex(
-		14,              // vector dimensions
-		comet.Euclidean, // distance function
-		4,               // M: connections per layer
-		100,              // efConstruction: build quality
-		50,             // efSearch: search quality
+	index, err := comet.NewIVFIndex(
+		14,              // dimensions
+		1732,            // nClusters: number of partitions
+		comet.Euclidean, // distance metric
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating flat index: %s", err.Error())
@@ -27,11 +26,27 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	}
 
 	labelMap := make(map[uint32]string, len(referenceVectors))
+	var nodes []comet.VectorNode
 
 	for _, ref := range referenceVectors {
 		node := comet.NewVectorNode(ref.Vector)
 		labelMap[node.ID()] = ref.Label
-		err = index.Add(*node)
+		nodes = append(nodes, *node)
+	}
+
+	log.Println("training...")
+	err = index.Train(nodes)
+	if err != nil {
+		return nil, fmt.Errorf("error training index: %s", err.Error())
+	}
+
+	log.Println("adding vectors...")
+	length := len(nodes)	
+	for i, node := range nodes {
+		if i%100 == 0 {
+			log.Printf("adding vector #%d/%d", i, length)
+		}
+		err = index.Add(node)
 		if err != nil {
 			return nil, fmt.Errorf("error adding vector to index: %s", err.Error())
 		}
@@ -42,7 +57,11 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 
 func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
 	kResults := 5
-	results, err := vd.index.NewSearch().WithQuery(vector).WithK(kResults).Execute()
+	results, err := vd.index.NewSearch().
+		WithQuery(vector).
+		WithK(kResults).
+		WithNProbes(8).
+		Execute()
 	if err != nil {
 		return false, 0, fmt.Errorf("error searching index: %s", err.Error())
 	}
