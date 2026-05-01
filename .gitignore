@@ -1,3 +1,6 @@
 /tmp
 .env
 resources/references.json
+transaction.db
+transaction.db-journal
+*.bin

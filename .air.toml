@@ -8,7 +8,7 @@ tmp_dir = "tmp"
 [build]
   args_bin = []
   bin = "./tmp/main"
-  cmd = "go build -ldflags='-s -w' -buildvcs=false -o ./tmp/main ."
+  cmd = "CGO_ENABLED=1 GOOS=linux && go build -ldflags='-s -w' -buildvcs=false -o ./tmp/main ."
   delay = 1000
   entrypoint = ["./tmp/main"]
   exclude_dir = ["assets", "tmp", "vendor", "testdata"]

@@ -22,7 +22,7 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 		return nil, fmt.Errorf("error creating ivfpq index: %s", err.Error())
 	}
 
-	referenceVectors, err := loadReferenceVectors(datasetPath)
+	referenceVectors, err := LoadReferenceVectors(datasetPath)
 	if err != nil {
 		return nil, fmt.Errorf("error loading reference vectors: %s", err.Error())
 	}
@@ -98,7 +98,7 @@ func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, flo
 	return approved, fraudScore, nil
 }
 
-func loadReferenceVectors(path string) ([]TransactionVector, error) {
+func LoadReferenceVectors(path string) ([]TransactionVector, error) {
 	var vectors []TransactionVector
 
 	inputData, err := os.ReadFile(path)

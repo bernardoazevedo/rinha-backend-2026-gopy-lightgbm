@@ -3,8 +3,10 @@ module github.com/bernardoazevedo/rinha-de-backend-2026
 go 1.25.0
 
 require (
+	github.com/asg017/sqlite-vec-go-bindings v0.1.6
 	github.com/fasthttp/router v1.5.4
 	github.com/joho/godotenv v1.5.1
+	github.com/mattn/go-sqlite3 v1.14.44
 	github.com/valyala/fasthttp v1.70.0
 	github.com/wizenheimer/comet v0.1.1
 )
