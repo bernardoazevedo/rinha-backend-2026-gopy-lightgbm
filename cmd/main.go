@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	"github.com/bernardoazevedo/rinha-de-backend-2026/internal"
@@ -12,14 +13,16 @@ import (
 )
 
 func main() {
+	totalStart := time.Now()
+
 	referencesPath := "./resources/references-lite.json"
 
-	os.Remove("./transaction.db")
 
 	println("opening database")
 	sqlite_vec.Auto()
-	db, err := sql.Open("sqlite3", "transaction.db")
-	// db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	// os.Remove("./transaction.db")
+	// db, err := sql.Open("sqlite3", "transaction.db")
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
 	// db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
 		log.Fatal(err)
@@ -39,8 +42,10 @@ func main() {
 	}
 
 	// inserting
+	insertTotalStart := time.Now()
 	for id, item := range referenceVectors {
-		println("inserting", id)
+		insertStart := time.Now()
+
 		v, err := sqlite_vec.SerializeFloat32(item.Vector)
 		if err != nil {
 			log.Fatal(err)
@@ -51,7 +56,11 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		fmt.Printf("[insert] id=%d took %v\n", id, time.Since(insertStart))
 	}
+	insertTotalElapsed := time.Since(insertTotalStart)
+	fmt.Printf("\n[insert total] %d items in %v\n\n", len(referenceVectors), insertTotalElapsed)
 
 	// searching
 	q := []float32{
@@ -75,6 +84,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	selectStart := time.Now()
 	rows, err := db.Query(`
 		SELECT
 			rowid,
@@ -104,4 +114,7 @@ func main() {
 	if err != nil {
 		log.Fatal((err))
 	}
+
+	fmt.Printf("\n[select] query took %v\n", time.Since(selectStart))
+	fmt.Printf("\n[total] execution took %v\n", time.Since(totalStart))
 }
