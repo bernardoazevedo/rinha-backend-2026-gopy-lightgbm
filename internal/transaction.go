@@ -11,15 +11,15 @@ import (
 )
 
 func LoadDataset(datasetPath string) (*VectorDatabase, error) {
-	index, err := comet.NewHNSWIndex(
+	index, err := comet.NewIVFPQIndex(
 		14,              // vector dimensions
 		comet.Euclidean, // distance function
-		12,              // M: connections per layer
-		200,             // efConstruction: build quality
-		200,             // efSearch: search quality
+		1732,            // nClusters: number of partitions
+		7,               // m: number of PQ subspaces
+		8,               // nBits: bits per PQ subspace
 	)
 	if err != nil {
-		return nil, fmt.Errorf("error creating flat index: %s", err.Error())
+		return nil, fmt.Errorf("error creating ivfpq index: %s", err.Error())
 	}
 
 	referenceVectors, err := loadReferenceVectors(datasetPath)
@@ -28,15 +28,26 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	}
 
 	labelMap := make(map[uint32]string, len(referenceVectors))
-
-	length := len(referenceVectors)
-	for i, ref := range referenceVectors {
-		if i%100 == 0 {
-			log.Printf("loading vector %d/%d", i, length)
-		}
+	var nodes []comet.VectorNode
+	for _, ref := range referenceVectors {
 		node := comet.NewVectorNode(ref.Vector)
 		labelMap[node.ID()] = ref.Label
-		err = index.Add(*node)
+		nodes = append(nodes, *node)
+	}
+
+	log.Println("training...")
+	err = index.Train(nodes)
+	if err != nil {
+		return nil, fmt.Errorf("error training index: %s", err.Error())
+	}
+
+	log.Println("adding vectors...")
+	length := len(nodes)
+	for i, node := range nodes {
+		if i%100 == 0 {
+			log.Printf("adding vector #%d/%d", i, length)
+		}
+		err = index.Add(node)
 		if err != nil {
 			return nil, fmt.Errorf("error adding vector to index: %s", err.Error())
 		}
@@ -47,7 +58,11 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 
 func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
 	kResults := 5
-	results, err := vd.index.NewSearch().WithQuery(vector).WithK(kResults).Execute()
+	results, err := vd.index.NewSearch().
+		WithQuery(vector).
+		WithK(kResults).
+		WithNProbes(1).
+		Execute()
 	if err != nil {
 		return false, 0, fmt.Errorf("error searching index: %s", err.Error())
 	}
