@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
@@ -9,21 +10,38 @@ import (
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	"github.com/bernardoazevedo/rinha-de-backend-2026/internal"
-	_ "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
 
 func main() {
 	totalStart := time.Now()
 
-	referencesPath := "./resources/references-lite.json"
+	if len(os.Args) < 2 {
+		log.Fatal("usage: main <create|query>")
+	}
+	mode := os.Args[1]
 
+	sqlite_vec.Auto()
+
+	switch mode {
+	case "create":
+		runCreate()
+	case "query":
+		runQuery()
+	default:
+		log.Fatalf("unknown mode: %s (use 'create' or 'query')", mode)
+	}
+
+	fmt.Printf("\n[total] execution took %v\n", time.Since(totalStart))
+}
+
+func runCreate() {
+	referencesPath := "./resources/references-half-lite.json"
+	dbPath := "./transaction.db"
 
 	println("opening database")
-	sqlite_vec.Auto()
-	// os.Remove("./transaction.db")
-	// db, err := sql.Open("sqlite3", "transaction.db")
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
-	// db, err := sql.Open("sqlite3", ":memory:")
+	os.Remove(dbPath)
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -61,6 +79,80 @@ func main() {
 	}
 	insertTotalElapsed := time.Since(insertTotalStart)
 	fmt.Printf("\n[insert total] %d items in %v\n\n", len(referenceVectors), insertTotalElapsed)
+}
+
+func loadFileToMemory(dbPath string) (*sql.DB, error) {
+	fileDB, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("error opening file database: %w", err)
+	}
+	defer fileDB.Close()
+
+	memDB, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		return nil, fmt.Errorf("error opening memory database: %w", err)
+	}
+
+	fileConn, err := fileDB.Conn(context.Background())
+	if err != nil {
+		memDB.Close()
+		return nil, fmt.Errorf("error getting file connection: %w", err)
+	}
+	defer fileConn.Close()
+
+	memConn, err := memDB.Conn(context.Background())
+	if err != nil {
+		memDB.Close()
+		return nil, fmt.Errorf("error getting memory connection: %w", err)
+	}
+	defer memConn.Close()
+
+	err = memConn.Raw(func(memDC interface{}) error {
+		return fileConn.Raw(func(fileDC interface{}) error {
+			memSQLiteConn, ok := memDC.(*sqlite3.SQLiteConn)
+			if !ok {
+				return fmt.Errorf("memory connection is not *sqlite3.SQLiteConn")
+			}
+			fileSQLiteConn, ok := fileDC.(*sqlite3.SQLiteConn)
+			if !ok {
+				return fmt.Errorf("file connection is not *sqlite3.SQLiteConn")
+			}
+
+			backup, err := memSQLiteConn.Backup("main", fileSQLiteConn, "main")
+			if err != nil {
+				return fmt.Errorf("error creating backup: %w", err)
+			}
+
+			_, err = backup.Step(-1)
+			if err != nil {
+				return fmt.Errorf("error during backup step: %w", err)
+			}
+
+			return backup.Finish()
+		})
+	})
+
+	if err != nil {
+		memDB.Close()
+		return nil, fmt.Errorf("error during backup: %w", err)
+	}
+
+	return memDB, nil
+}
+
+func runQuery() {
+	dbPath := "./transaction.db"
+
+	println("loading database from file to memory...")
+	loadStart := time.Now()
+
+	db, err := loadFileToMemory(dbPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	fmt.Printf("[load] database loaded to memory in %v\n\n", time.Since(loadStart))
 
 	// searching
 	q := []float32{
@@ -116,5 +208,4 @@ func main() {
 	}
 
 	fmt.Printf("\n[select] query took %v\n", time.Since(selectStart))
-	fmt.Printf("\n[total] execution took %v\n", time.Since(totalStart))
 }
