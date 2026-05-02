@@ -1,126 +1,74 @@
 package internal
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"math"
 	"os"
+	"strconv"
 	"time"
 
-	"github.com/wizenheimer/comet"
+	"github.com/coder/hnsw"
 )
 
 const vectorDimensions = 14
-const recordSize = 1 + vectorDimensions*4 // 1 byte label + 14 x float32
-const trainingSampleSize = 100_000
 
 func LoadDataset(datasetPath string) (*VectorDatabase, error) {
-	index, err := comet.NewIVFPQIndex(
-		14,              // vector dimensions
-		comet.Euclidean, // distance function
-		1732,            // nClusters: number of partitions
-		7,               // m: number of PQ subspaces
-		8,               // nBits: bits per PQ subspace
-	)
+	var err error
+	graph := hnsw.NewGraph[int]()
+
+	graph.M, err = strconv.Atoi(os.Getenv("GRAPH_M"))
 	if err != nil {
-		return nil, fmt.Errorf("error creating ivfpq index: %s", err.Error())
+		return nil, fmt.Errorf("error parsing GRAPH_M: %s", err.Error())
 	}
 
-	f, err := os.Open(datasetPath)
+	graph.Ml, err = strconv.ParseFloat(os.Getenv("GRAPH_ML"), 64)
 	if err != nil {
-		return nil, fmt.Errorf("error opening binary dataset: %s", err.Error())
+		return nil, fmt.Errorf("error parsing GRAPH_ML: %s", err.Error())
 	}
-	defer f.Close()
+	// referenceVectors, err := LoadReferenceVectors(datasetPath)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error loading reference vectors: %s", err.Error())
+	// }
 
-	reader := bufio.NewReaderSize(f, 256*1024)
+	// labelMap := map[int]bool{}
+	// for i, v := range referenceVectors {
+	// 	labelMap[i] = v.Label == "legit"
+	// 	graph.Add(hnsw.MakeNode(i, v.Vector))
+	// }
 
-	// Read record count from header
-	var count uint32
-	if err := binary.Read(reader, binary.LittleEndian, &count); err != nil {
-		return nil, fmt.Errorf("error reading binary header: %s", err.Error())
-	}
+	// fileToSave, err := os.OpenFile("graph.bin", os.O_CREATE|os.O_WRONLY, 0644)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error opening file to save graph: %s", err.Error())
+	// }
 
-	log.Printf("dataset has %d vectors", count)
-
-	// Determine training sample size
-	trainSize := trainingSampleSize
-	if int(count) < trainSize {
-		trainSize = int(count)
-	}
-
-	// Read training sample
-	trainNodes := make([]comet.VectorNode, 0, trainSize)
-	trainLabels := make([]string, 0, trainSize)
-	recordBuf := make([]byte, recordSize)
-
-	const labelFraud = "fraud"
-	const labelLegit = "legit"
-
-	for i := 0; i < trainSize; i++ {
-		if _, err := io.ReadFull(reader, recordBuf); err != nil {
-			return nil, fmt.Errorf("error reading training record #%d: %s", i, err.Error())
-		}
-
-		vector := decodeVector(recordBuf)
-		label := labelLegit
-		if recordBuf[0] == 1 {
-			label = labelFraud
-		}
-
-		node := comet.NewVectorNode(vector)
-		trainNodes = append(trainNodes, *node)
-		trainLabels = append(trainLabels, label)
+	savedGraph, err := os.ReadFile(os.Getenv("GRAPH_FILE_NAME"))
+	if err != nil {
+		return nil, fmt.Errorf("error reading graph file: %s", err.Error())
 	}
 
-	log.Printf("training with %d vectors...", trainSize)
-	if err := index.Train(trainNodes); err != nil {
-		return nil, fmt.Errorf("error training index: %s", err.Error())
+	err = graph.Import(bytes.NewBuffer(savedGraph))
+	if err != nil {
+		return nil, fmt.Errorf("error exporting graph: %s", err.Error())
 	}
 
-	// Add training vectors to index and build label map
-	labelMap := make(map[uint32]string, int(count))
-	for i, node := range trainNodes {
-		if err := index.Add(node); err != nil {
-			return nil, fmt.Errorf("error adding training vector #%d: %s", i, err.Error())
-		}
-		labelMap[node.ID()] = trainLabels[i]
+	labelBytes, err := os.ReadFile(os.Getenv("LABEL_FILE_NAME"))
+	if err != nil {
+		return nil, fmt.Errorf("error reading label file: %s", err.Error())
 	}
 
-	// Free training slices
-	trainNodes = nil
-	trainLabels = nil
-
-	// Stream remaining vectors one at a time
-	remaining := int(count) - trainSize
-	log.Printf("adding remaining %d vectors...", remaining)
-	for i := 0; i < remaining; i++ {
-		if _, err := io.ReadFull(reader, recordBuf); err != nil {
-			return nil, fmt.Errorf("error reading record #%d: %s", trainSize+i, err.Error())
-		}
-
-		vector := decodeVector(recordBuf)
-		label := labelLegit
-		if recordBuf[0] == 1 {
-			label = labelFraud
-		}
-
-		node := comet.NewVectorNode(vector)
-		labelMap[node.ID()] = label
-		if err := index.Add(*node); err != nil {
-			return nil, fmt.Errorf("error adding vector #%d: %s", trainSize+i, err.Error())
-		}
-
-		if (i+1)%500000 == 0 {
-			log.Printf("added %d/%d remaining vectors", i+1, remaining)
-		}
+	var labelMap map[int]bool
+	err = json.Unmarshal(labelBytes, &labelMap)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshalling label map: %s", err.Error())
 	}
 
-	log.Printf("dataset loaded: %d vectors indexed", count)
-	return &VectorDatabase{index: index, labelMap: labelMap}, nil
+	return &VectorDatabase{
+		graph:    graph,
+		labelMap: labelMap,
+	}, nil
 }
 
 // decodeVector extracts 14 float32 values from a binary record buffer (skipping the first label byte).
@@ -133,20 +81,13 @@ func decodeVector(recordBuf []byte) []float32 {
 	return vector
 }
 
-func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
+func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32) {
 	kResults := 5
-	results, err := vd.index.NewSearch().
-		WithQuery(vector).
-		WithK(kResults).
-		WithNProbes(8).
-		Execute()
-	if err != nil {
-		return false, 0, fmt.Errorf("error searching index: %s", err.Error())
-	}
+	results := vd.graph.Search(vector, kResults)
 
 	var fraudCount int
 	for _, result := range results {
-		if vd.labelMap[result.GetId()] == "fraud" {
+		if !vd.labelMap[result.Key] {
 			fraudCount++
 		}
 	}
@@ -155,10 +96,10 @@ func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) 
 
 	fraudScore := float32(fraudCount) / float32(kResults)
 	if fraudScore >= threshold {
-		return false, fraudScore, nil
+		return false, fraudScore
 	}
 
-	return true, fraudScore, nil
+	return true, fraudScore
 }
 
 func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, float32, error) {
@@ -167,15 +108,12 @@ func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, flo
 		return false, 0, fmt.Errorf("error loading dataset: %s", err.Error())
 	}
 
-	approved, fraudScore, err := vectorDatabase.VerifyVector(vector)
-	if err != nil {
-		return false, 0, fmt.Errorf("error verifying vector: %s", err.Error())
-	}
+	approved, fraudScore := vectorDatabase.VerifyVector(vector)
 
 	return approved, fraudScore, nil
 }
 
-func loadReferenceVectors(path string) ([]TransactionVector, error) {
+func LoadReferenceVectors(path string) ([]TransactionVector, error) {
 	var vectors []TransactionVector
 
 	inputData, err := os.ReadFile(path)

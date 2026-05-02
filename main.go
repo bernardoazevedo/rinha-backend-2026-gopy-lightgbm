@@ -31,7 +31,7 @@ func main() {
 	}
 
 	log.Printf("loading dataset")
-	vectorDatabase, err = internal.LoadDataset("./resources/references.bin")
+	vectorDatabase, err = internal.LoadDataset("./resources/"+os.Getenv("DATASET"))
 	if err != nil {
 		log.Fatal("Error loading dataset:", err)
 	}
@@ -103,12 +103,7 @@ func fraudScore(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	approved, fraudScore, err := vectorDatabase.VerifyVector(vector)
-	if err != nil {
-		log.Printf("Error verifying vector: %s", err)
-		ctx.Response.SetStatusCode(fasthttp.StatusInternalServerError)
-		return
-	}
+	approved, fraudScore := vectorDatabase.VerifyVector(vector)
 
 	response := internal.FraudScoreResponse{
 		Approved:   approved,

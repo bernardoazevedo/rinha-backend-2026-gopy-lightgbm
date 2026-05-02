@@ -2,3 +2,5 @@
 .env
 resources/references.json
 resources/*.bin
+graph.bin
+labels.json
