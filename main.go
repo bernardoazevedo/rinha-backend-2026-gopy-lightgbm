@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/bernardoazevedo/rinha-de-backend-2026/internal"
@@ -12,6 +13,13 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/valyala/fasthttp"
 )
+
+func init() {
+	// Configure aggressive GC for constrained container environments
+	debug.SetGCPercent(20)
+	// // Hard limit Go memory at 120MB to leave room for C cgo/OS overhead under the 165MB container limit
+	// debug.SetMemoryLimit(120 * 1024 * 1024)
+}
 
 var vectorDatabase *internal.VectorDatabase
 var normalizationConstants internal.NormalizationConstants

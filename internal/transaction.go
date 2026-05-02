@@ -9,6 +9,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/wizenheimer/comet"
@@ -101,15 +102,21 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	// Stream remaining vectors one at a time
 	remaining := int(count) - trainSize
 	log.Printf("adding remaining %d vectors...", remaining)
+
+	// CRITICAL MEMORY OPTIMIZATION:
+	// Reuse a single slice for all remaining vectors to bypass Comet's VectorNode retaining the original arrays.
+	// Since Comet's Add() only reads the vector for PQ encoding and we never read the original vector again,
+	sharedVector := make([]float32, vectorDimensions)
+
 	for i := 0; i < remaining; i++ {
 		if _, err := io.ReadFull(reader, recordBuf); err != nil {
 			return nil, fmt.Errorf("error reading record #%d: %s", trainSize+i, err.Error())
 		}
 
-		vector := decodeVector(recordBuf)
+		decodeVectorInto(recordBuf, sharedVector)
 		isLegitLabel := recordBuf[0] == 1
 
-		node := comet.NewVectorNode(vector)
+		node := comet.NewVectorNode(sharedVector)
 		id := node.ID()
 		if int(id) >= len(isLegit) {
 			newIsLegit := make([]bool, int(id)*2+1)
@@ -123,21 +130,40 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 
 		if (i+1)%500000 == 0 {
 			log.Printf("added %d/%d remaining vectors", i+1, remaining)
+			
+			// Shrink slice capacities inside Comet's inverted lists by calling Flush
+			// Flush creates a new perfectly-sized slice and discards the bloated one
+			log.Println("index.Flush()")
+			index.Flush()
+
+			// Force GC to free the old discarded slices and any slice growth overhead from inverted lists
+			log.Println("runtime.GC()")
+			runtime.GC()
 		}
 	}
 
 	log.Printf("dataset loaded: %d vectors indexed", count)
+	
+	// Final shrink to ensure no capacity waste after the loop is over
+	index.Flush()
+	runtime.GC()
+	
 	return &VectorDatabase{index: index, isLegit: isLegit}, nil
 }
 
 // decodeVector extracts 14 float32 values from a binary record buffer (skipping the first label byte).
 func decodeVector(recordBuf []byte) []float32 {
 	vector := make([]float32, vectorDimensions)
+	decodeVectorInto(recordBuf, vector)
+	return vector
+}
+
+// decodeVectorInto extracts 14 float32 values from a binary record buffer directly into the provided slice.
+func decodeVectorInto(recordBuf []byte, vector []float32) {
 	for j := 0; j < vectorDimensions; j++ {
 		bits := binary.LittleEndian.Uint32(recordBuf[1+j*4:])
 		vector[j] = math.Float32frombits(bits)
 	}
-	return vector
 }
 
 func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
