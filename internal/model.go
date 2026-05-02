@@ -82,8 +82,8 @@ type TransactionVector struct {
 }
 
 type VectorDatabase struct {
-	index    *comet.IVFPQIndex
-	labelMap map[uint32]string
+	index   *comet.IVFPQIndex
+	isLegit []bool
 }
 
 type FraudScoreResponse struct {

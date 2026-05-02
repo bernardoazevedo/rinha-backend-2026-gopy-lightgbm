@@ -54,11 +54,8 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 
 	// Read training sample
 	trainNodes := make([]comet.VectorNode, 0, trainSize)
-	trainLabels := make([]string, 0, trainSize)
+	trainLabels := make([]bool, 0, trainSize)
 	recordBuf := make([]byte, recordSize)
-
-	const labelFraud = "fraud"
-	const labelLegit = "legit"
 
 	for i := 0; i < trainSize; i++ {
 		if _, err := io.ReadFull(reader, recordBuf); err != nil {
@@ -66,14 +63,11 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 		}
 
 		vector := decodeVector(recordBuf)
-		label := labelLegit
-		if recordBuf[0] == 1 {
-			label = labelFraud
-		}
+		isLegitLabel := recordBuf[0] == 1
 
 		node := comet.NewVectorNode(vector)
 		trainNodes = append(trainNodes, *node)
-		trainLabels = append(trainLabels, label)
+		trainLabels = append(trainLabels, isLegitLabel)
 	}
 
 	log.Printf("training with %d vectors...", trainSize)
@@ -82,12 +76,22 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	}
 
 	// Add training vectors to index and build label map
-	labelMap := make(map[uint32]string, int(count))
+	isLegit := make([]bool, count+1)
 	for i, node := range trainNodes {
 		if err := index.Add(node); err != nil {
 			return nil, fmt.Errorf("error adding training vector #%d: %s", i, err.Error())
 		}
-		labelMap[node.ID()] = trainLabels[i]
+		id := node.ID()
+		if int(id) >= len(isLegit) {
+			newIsLegit := make([]bool, int(id)*2+1)
+			copy(newIsLegit, isLegit)
+			isLegit = newIsLegit
+		}
+		isLegit[id] = trainLabels[i]
+
+		if (i+1)%1000 == 0 {
+			log.Printf("trained %d/%d vectors", i+1, trainSize)
+		}
 	}
 
 	// Free training slices
@@ -103,13 +107,16 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 		}
 
 		vector := decodeVector(recordBuf)
-		label := labelLegit
-		if recordBuf[0] == 1 {
-			label = labelFraud
-		}
+		isLegitLabel := recordBuf[0] == 1
 
 		node := comet.NewVectorNode(vector)
-		labelMap[node.ID()] = label
+		id := node.ID()
+		if int(id) >= len(isLegit) {
+			newIsLegit := make([]bool, int(id)*2+1)
+			copy(newIsLegit, isLegit)
+			isLegit = newIsLegit
+		}
+		isLegit[id] = isLegitLabel
 		if err := index.Add(*node); err != nil {
 			return nil, fmt.Errorf("error adding vector #%d: %s", trainSize+i, err.Error())
 		}
@@ -120,7 +127,7 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	}
 
 	log.Printf("dataset loaded: %d vectors indexed", count)
-	return &VectorDatabase{index: index, labelMap: labelMap}, nil
+	return &VectorDatabase{index: index, isLegit: isLegit}, nil
 }
 
 // decodeVector extracts 14 float32 values from a binary record buffer (skipping the first label byte).
@@ -146,7 +153,8 @@ func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) 
 
 	var fraudCount int
 	for _, result := range results {
-		if vd.labelMap[result.GetId()] == "fraud" {
+		id := result.GetId()
+		if int(id) < len(vd.isLegit) && !vd.isLegit[id] {
 			fraudCount++
 		}
 	}
