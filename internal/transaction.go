@@ -28,21 +28,6 @@ func LoadDataset(datasetPath string) (*VectorDatabase, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error parsing GRAPH_ML: %s", err.Error())
 	}
-	// referenceVectors, err := LoadReferenceVectors(datasetPath)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error loading reference vectors: %s", err.Error())
-	// }
-
-	// labelMap := map[int]bool{}
-	// for i, v := range referenceVectors {
-	// 	labelMap[i] = v.Label == "legit"
-	// 	graph.Add(hnsw.MakeNode(i, v.Vector))
-	// }
-
-	// fileToSave, err := os.OpenFile("graph.bin", os.O_CREATE|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error opening file to save graph: %s", err.Error())
-	// }
 
 	savedGraph, err := os.ReadFile(os.Getenv("GRAPH_FILE_NAME"))
 	if err != nil {
