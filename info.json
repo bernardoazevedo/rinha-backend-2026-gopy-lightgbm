@@ -1,7 +1,17 @@
 {
-    "participants": ["Bernardo Azevedo"],
-    "social": ["https://github.com/bernardoazevedo", "https://www.linkedin.com/in/bernardo-azevedo-49a008226"],
-    "source-code-repo": "https://github.com/bernardoazevedo/rinha-2026-go",
-    "stack": ["go", "nginx"],
+    "participants": [
+        "Bernardo Azevedo"
+    ],
+    "social": [
+        "https://github.com/bernardoazevedo",
+        "https://www.linkedin.com/in/bernardo-azevedo-49a008226"
+    ],
+    "source-code-repo": "https://github.com/bernardoazevedo/rinha-backend-2026-gopy-lightgbm",
+    "stack": [
+        "go",
+        "python",
+        "lightgbm",
+        "nginx"
+    ],
     "open_to_work": true
 }
