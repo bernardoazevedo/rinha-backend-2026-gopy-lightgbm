@@ -3,59 +3,40 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
-	"github.com/wizenheimer/comet"
+	"github.com/dmitryikh/leaves"
 )
 
-func LoadDataset(datasetPath string) (*VectorDatabase, error) {
-	index, err := comet.NewFlatIndex(14, comet.Euclidean)
+const fraudThreshold = 0.6
+
+func LoadDataset(datasetPath string) (*Model, error) {
+	log.Printf("Carregando modelo: %s", datasetPath)
+	model, err := leaves.LGEnsembleFromFile(datasetPath, true)
 	if err != nil {
-		return nil, fmt.Errorf("error creating flat index: %s", err.Error())
+		log.Fatalf("Erro ao carregar modelo: %v\nGere o modelo primeiro: python train_lgbm.py", err)
 	}
-
-	referenceVectors, err := loadReferenceVectors(datasetPath)
-	if err != nil {
-		return nil, fmt.Errorf("error loading reference vectors: %s", err.Error())
-	}
-
-	labelMap := make(map[uint32]string, len(referenceVectors))
-
-	for _, ref := range referenceVectors {
-		node := comet.NewVectorNode(ref.Vector)
-		labelMap[node.ID()] = ref.Label
-		err = index.Add(*node)
-		if err != nil {
-			return nil, fmt.Errorf("error adding vector to index: %s", err.Error())
-		}
-	}
-
-	return &VectorDatabase{index: index, labelMap: labelMap}, nil
+	log.Printf("Modelo carregado: %d estimadores, %d grupo(s) de saída\n", model.NEstimators(), model.NOutputGroups())
+	return &Model{model: model}, nil
 }
 
-func (vd *VectorDatabase) VerifyVector(vector []float32) (bool, float32, error) {
-	kResults := 5
-	results, err := vd.index.NewSearch().WithQuery(vector).WithK(kResults).Execute()
-	if err != nil {
-		return false, 0, fmt.Errorf("error searching index: %s", err.Error())
+func (model *Model) VerifyVector(vector []float32) (bool, float32, error) {
+	vec64 := make([]float64, len(vector))
+	for i, v := range vector {
+		vec64[i] = float64(v)
 	}
 
-	var fraudCount int
-	for _, result := range results {
-		if vd.labelMap[result.GetId()] == "fraud" {
-			fraudCount++
-		}
+	predictions := make([]float64, model.model.NOutputGroups())
+	if err := model.model.Predict(vec64, 0, predictions); err != nil {
+		return false, 0, fmt.Errorf("error predicting: %s", err.Error())
 	}
 
-	const threshold = 0.6
+	fraudScore := predictions[0]
+	approved := fraudScore < fraudThreshold
 
-	fraudScore := float32(fraudCount) / float32(kResults)
-	if fraudScore >= threshold {
-		return false, fraudScore, nil
-	}
-
-	return true, fraudScore, nil
+	return approved, float32(fraudScore), nil
 }
 
 func LoadDatasetAndVerifyVector(datasetPath string, vector []float32) (bool, float32, error) {
