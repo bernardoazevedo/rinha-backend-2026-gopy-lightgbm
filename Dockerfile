@@ -22,7 +22,7 @@ RUN go mod download
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags='-s -w' -buildvcs=false -o /app/tmp/main .
 
 
-FROM alpine:3.21 as runner
+FROM alpine:3.21 AS runner
 
 WORKDIR /app
 COPY --from=builder /app/.env /app/.env
