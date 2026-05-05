@@ -6,9 +6,10 @@ RUN apt-get update && apt-get install libgomp1 -y
 
 RUN pip install --no-cache-dir numpy lightgbm==3.3.5
 
-COPY resources/references.json resources/references.json
+COPY resources/references.json.gz resources/references.json.gz
 COPY train_lgbm.py train_lgbm.py
 
+RUN gzip -d resources/references.json.gz
 RUN python3 train_lgbm.py
 
 
