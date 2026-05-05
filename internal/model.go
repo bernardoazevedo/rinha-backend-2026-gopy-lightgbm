@@ -1,6 +1,6 @@
 package internal
 
-import "github.com/wizenheimer/comet"
+import "github.com/dmitryikh/leaves"
 
 // https://github.com/zanfranceschi/rinha-de-backend-2026/blob/main/docs/br/API.md#campos-da-requisição
 //
@@ -81,13 +81,11 @@ type TransactionVector struct {
 	Label  string    `json:"label"`
 }
 
-type VectorDatabase struct {
-	index    *comet.IVFPQIndex
-	labelMap map[uint32]string
+type Model struct {
+	model *leaves.Ensemble
 }
 
 type FraudScoreResponse struct {
 	Approved   bool    `json:"approved"`
 	FraudScore float32 `json:"fraud_score"`
 }
-	

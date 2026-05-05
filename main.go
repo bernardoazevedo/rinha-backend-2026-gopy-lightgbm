@@ -13,7 +13,7 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-var vectorDatabase *internal.VectorDatabase
+var model *internal.Model
 var normalizationConstants internal.NormalizationConstants
 var mccRiskMap map[string]float32
 
@@ -30,10 +30,9 @@ func main() {
 		log.SetFlags(0)
 	}
 
-	log.Printf("loading dataset")
-	vectorDatabase, err = internal.LoadDataset("./resources/references-lite.json")
+	model, err = internal.LoadDataset("./testdata/lgfraud.model")
 	if err != nil {
-		log.Fatal("Error loading dataset:", err)
+		log.Fatalf("Error loading dataset: %s", err)
 	}
 
 	normalizationConstants, err = internal.LoadNormalizationConstants("./resources/normalization.json")
@@ -103,7 +102,7 @@ func fraudScore(ctx *fasthttp.RequestCtx) {
 		return
 	}
 
-	approved, fraudScore, err := vectorDatabase.VerifyVector(vector)
+	approved, fraudScore, err := model.VerifyVector(vector)
 	if err != nil {
 		log.Printf("Error verifying vector: %s", err)
 		ctx.Response.SetStatusCode(fasthttp.StatusInternalServerError)
